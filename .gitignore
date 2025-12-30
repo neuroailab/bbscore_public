@@ -1,0 +1,23 @@
+# Ignore .ipynb_checkpoints directory
+**/.ipynb_checkpoints/
+
+# Ignore __pycache__ directories
+**/__pycache__/
+
+# Ignore compiled Python files
+*.pyc
+*.pyo
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+
+test_eval*
+
+# Ignore environment
+.venv/
+wandb/
+
+out/

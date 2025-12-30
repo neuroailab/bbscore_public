@@ -1,0 +1,29 @@
+name: Auto-format with autopep8
+
+on: [push, pull_request]
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install autopep8
+        run: pip install autopep8
+
+      - name: Run autopep8 formatter
+        run: |
+          # Format all Python files except benchmarks/__init__.py
+          find . -name "*.py" ! -path "./benchmarks/__init__.py" ! -path "./models/__init__.py" -exec autopep8 --in-place {} +
+ 
+          # Check for any changes (i.e., non-compliant files)
+          if ! git diff --exit-code; then
+              echo "Code is not PEP8 compliant!"
+              exit 1
+          fi
