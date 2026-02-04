@@ -827,21 +827,153 @@ fi
 
 print_header "Installing Dependencies"
 
-if [ -n "$CONDA_CMD" ] && [ "$SKIP_CONDA" != true ]; then
-    print_info "Installing decord from conda-forge..."
-    $CONDA_CMD install -c conda-forge decord -y 2>/dev/null || \
-        print_warning "Decord conda install failed, will try pip"
-fi
-
+# Install requirements first (without decord which may fail on some platforms)
 REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 if [ -f "$REQUIREMENTS_FILE" ]; then
-    print_info "Installing from requirements.txt..."
-    pip install -r "$REQUIREMENTS_FILE" && print_success "Dependencies installed" || \
+    print_info "Installing from requirements.txt (excluding decord)..."
+    # Install requirements, filtering out decord line (we'll handle it separately)
+    grep -v "^decord" "$REQUIREMENTS_FILE" | pip install -r /dev/stdin && \
+        print_success "Dependencies installed" || \
         print_warning "Some dependencies failed"
 else
     print_warning "requirements.txt not found"
     print_info "Installing essential packages..."
     pip install numpy scipy scikit-learn pillow opencv-python tqdm h5py transformers timm wandb boto3 gdown google-cloud-storage
+fi
+
+# Install decord (platform-specific handling)
+print_header "Installing Decord (Video Library)"
+
+install_decord() {
+    # Try conda first (works on Linux x86_64)
+    if [ -n "$CONDA_CMD" ] && [ "$SKIP_CONDA" != true ]; then
+        print_info "Trying conda-forge..."
+        if $CONDA_CMD install -c conda-forge decord -y 2>/dev/null; then
+            print_success "Decord installed via conda"
+            return 0
+        fi
+    fi
+
+    # Try pip (works on some platforms)
+    print_info "Trying pip..."
+    if pip install decord 2>/dev/null; then
+        print_success "Decord installed via pip"
+        return 0
+    fi
+
+    # Build from source (needed for macOS ARM64 and some Linux)
+    print_info "Pre-built packages not available. Building from source..."
+
+    # Check for required build tools
+    if ! command_exists cmake; then
+        print_warning "cmake not found, attempting to install..."
+        if [ "$OS" = "macos" ]; then
+            if command_exists brew; then
+                brew install cmake || { print_error "Failed to install cmake"; return 1; }
+            else
+                print_error "Please install Homebrew first: https://brew.sh"
+                print_error "Then run: brew install cmake ffmpeg"
+                return 1
+            fi
+        else
+            print_error "Please install cmake: sudo apt-get install cmake"
+            return 1
+        fi
+    fi
+
+    # Install ffmpeg if needed (for development headers)
+    if [ "$OS" = "macos" ]; then
+        # On macOS, we need ffmpeg from Homebrew for headers
+        if ! brew list ffmpeg &>/dev/null; then
+            print_info "Installing ffmpeg via Homebrew..."
+            if command_exists brew; then
+                brew install ffmpeg || { print_error "Failed to install ffmpeg"; return 1; }
+            else
+                print_error "Please install Homebrew first: https://brew.sh"
+                return 1
+            fi
+        fi
+    elif [ "$OS" = "linux" ]; then
+        if ! command_exists ffmpeg; then
+            print_error "Please install ffmpeg development packages:"
+            echo "  Ubuntu/Debian: sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev"
+            echo "  CentOS/RHEL: sudo yum install ffmpeg ffmpeg-devel"
+            return 1
+        fi
+    fi
+
+    # Clone and build decord
+    local temp_dir="/tmp/decord_build_$$"
+    mkdir -p "$temp_dir"
+
+    print_info "Cloning decord repository..."
+    if ! git clone --recursive https://github.com/dmlc/decord.git "$temp_dir/decord"; then
+        print_error "Failed to clone decord"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    cd "$temp_dir/decord"
+
+    # Build decord
+    print_info "Building decord (this may take a few minutes)..."
+    mkdir -p build && cd build
+
+    # Platform-specific cmake configuration
+    if [ "$OS" = "macos" ]; then
+        # macOS: use Homebrew ffmpeg, disable CUDA
+        FFMPEG_DIR=$(brew --prefix ffmpeg 2>/dev/null || echo "/opt/homebrew")
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DUSE_CUDA=OFF \
+                 -DFFMPEG_DIR="$FFMPEG_DIR" \
+                 -DCMAKE_PREFIX_PATH="$FFMPEG_DIR"
+    else
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+    fi
+
+    # Compile
+    local num_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    if ! make -j"$num_cores"; then
+        print_error "Failed to compile decord"
+        cd "$SCRIPT_DIR"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Install Python bindings
+    cd ../python
+    print_info "Installing decord Python bindings..."
+    if pip install .; then
+        print_success "Decord built and installed successfully"
+        cd "$SCRIPT_DIR"
+        rm -rf "$temp_dir"
+        return 0
+    else
+        print_error "Failed to install decord Python bindings"
+        cd "$SCRIPT_DIR"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+}
+
+if ! install_decord; then
+    echo ""
+    print_warning "Decord installation failed."
+    print_info "Video benchmarks may not work without decord."
+    echo ""
+    echo "To install manually later:"
+    if [ "$OS" = "macos" ]; then
+        echo "  1. Install build tools: brew install cmake ffmpeg"
+        echo "  2. Clone: git clone --recursive https://github.com/dmlc/decord.git"
+        echo "  3. Build: cd decord && mkdir build && cd build && cmake .. -DUSE_CUDA=OFF && make"
+        echo "  4. Install: cd ../python && pip install ."
+    else
+        echo "  1. Install build tools: sudo apt-get install cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev"
+        echo "  2. Clone: git clone --recursive https://github.com/dmlc/decord.git"
+        echo "  3. Build: cd decord && mkdir build && cd build && cmake .. && make"
+        echo "  4. Install: cd ../python && pip install ."
+    fi
+    echo ""
 fi
 
 # ============================================================================
