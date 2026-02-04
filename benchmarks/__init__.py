@@ -7,3 +7,4 @@ from benchmarks.Physion import PhysionContact
 from benchmarks.Physion import PhysionPlacement
 from benchmarks.SSV2 import SSV2Benchmark
 from benchmarks.V1SineGratings import V1SineGratingsBenchmark
+from benchmarks.LeBel2023 import LeBel2023Benchmark

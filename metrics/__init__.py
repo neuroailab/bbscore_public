@@ -9,7 +9,7 @@ from .soft_matching import SoftMatchingMetric
 from .semi_matching import SemiMatchingMetric
 from .rsa import RSAMetric, TemporalRSAMetric
 from .versa import VeRSAMetric
-from .online_mappers import OnlineLinearClassifier
+from .online_mappers import OnlineLinearClassifier, OnlineLinearRegressor
 from .online_mappers import OnlineTransformerClassifier
 from .orientation_selectivity import OrientationSelectivity
 from .physion import OnlinePhysionContactDetection, OnlinePhysionContactPrediction, OnlinePhysionPlacementDetection, OnlinePhysionPlacementPrediction
@@ -33,6 +33,7 @@ METRICS = {
 
     # online metrics
     "online_linear_classifier": OnlineLinearClassifier,
+    "online_linear_regressor": OnlineLinearRegressor,
     "online_transformer_classifier": OnlineTransformerClassifier,
     "physion_placement_prediction": OnlinePhysionPlacementPrediction,
     "physion_placement_detection": OnlinePhysionPlacementDetection,

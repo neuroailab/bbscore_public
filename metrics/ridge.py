@@ -32,10 +32,64 @@ class RidgeMetric(BaseMetric):
         ],
         ceiling: Optional[float] = None,
         mode: Optional[str] = "sklearn",
+        subsample_features_for_alpha: Optional[int] = None,
     ):
+        """
+        Args:
+            alpha_options: List of alpha values to try during cross-validation.
+            ceiling: Optional ceiling value for score normalization.
+            mode: Either "sklearn" or "torch" for the backend.
+            subsample_features_for_alpha: If set, use a random subset of this many
+                features to find the optimal alpha via RidgeCV, then train the final
+                model with all features using Ridge(alpha=best_alpha). This speeds up
+                alpha selection significantly for high-dimensional features.
+                Set to None to disable (default behavior using full RidgeCV).
+                Recommended value: 2000-5000 for large models.
+        """
         super().__init__(ceiling)
         self.alpha_options = alpha_options
         self.mode = mode
+        self.subsample_features_for_alpha = subsample_features_for_alpha
+
+    def _find_best_alpha_subsampled(
+        self,
+        source: np.ndarray,
+        target: np.ndarray,
+        n_subsample: int,
+        random_state: int = 42,
+    ) -> float:
+        """
+        Find the best alpha using a random subset of features.
+
+        Args:
+            source: Full feature array (N, D)
+            target: Target array (N, T)
+            n_subsample: Number of features to subsample
+            random_state: Random seed for reproducibility
+
+        Returns:
+            Best alpha value found on subsampled features
+        """
+        n_features = source.shape[1]
+
+        if n_features <= n_subsample:
+            # No need to subsample
+            cv_model = RidgeCV(alphas=self.alpha_options,
+                               store_cv_results=False)
+            cv_model.fit(source, target)
+            return cv_model.alpha_
+
+        # Subsample features
+        rng = np.random.RandomState(random_state)
+        feature_indices = rng.choice(
+            n_features, size=n_subsample, replace=False)
+        source_sub = source[:, feature_indices]
+
+        # Find best alpha on subsampled features
+        cv_model = RidgeCV(alphas=self.alpha_options, store_cv_results=False)
+        cv_model.fit(source_sub, target)
+
+        return cv_model.alpha_
 
     def compute_raw(
         self,
@@ -59,9 +113,21 @@ class RidgeMetric(BaseMetric):
                 test_source = test_source.reshape(N_test, -1)
 
         if self.mode == "sklearn":
-            def model_factory():
-                return RidgeCV(alphas=self.alpha_options,
-                               store_cv_results=True, alpha_per_target=True)
+            # Check if we should use subsampled alpha search
+            if (self.subsample_features_for_alpha is not None and
+                    source.shape[1] > self.subsample_features_for_alpha):
+                # Fast path: find alpha on subsampled features, then use Ridge with fixed alpha
+                best_alpha = self._find_best_alpha_subsampled(
+                    source, target, self.subsample_features_for_alpha
+                )
+
+                def model_factory():
+                    return Ridge(alpha=best_alpha)
+            else:
+                # Standard path: full RidgeCV
+                def model_factory():
+                    return RidgeCV(alphas=self.alpha_options,
+                                   store_cv_results=True, alpha_per_target=True)
         else:
             X_train_param, X_val_param, y_train_param, y_val_param = train_test_split(
                 source, target, test_size=0.1, random_state=42)

@@ -16,6 +16,14 @@ from scipy.stats import pearsonr
 import wandb
 
 
+# Import loss functions
+# These are imported here to avoid circular imports with the metrics package
+def _import_loss_functions():
+    """Lazy import of loss functions."""
+    from .losses import pearson_correlation_loss, compute_scale_ratio, ccc_loss
+    return pearson_correlation_loss, compute_scale_ratio, ccc_loss
+
+
 class OnlineLinearClassifier(OnlineMetric):
     def __init__(
         self,
@@ -281,42 +289,63 @@ class OnlineLinearRegressor(OnlineMetric):
         output_dim: int = 1,
         lr_options: Optional[List[float]] = None,
         wd_options: Optional[List[float]] = None,
-        n_epochs: int = 25,
+        n_epochs: int = 100,
         patience: int = 5,
         batch_size: int = 32,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         ceiling: Optional[np.ndarray] = None,
-        # 'deterministic_scheduler', 'warmup_stable_decay', # Option for scheduler
-        scheduler_type: str = 'reduce_on_plateau',
+        # 'deterministic_scheduler', 'warmup_stable_decay', 'warmup_cosine' # Option for scheduler
+        scheduler_type: str = 'warmup_cosine',
+        correlation_weight: float = 0.5,
+        loss_type: str = 'mse',
     ):
         """
-        Online Linear Ridge Regressor with L2 regularization via SGD weight decay.
+        Online Linear Ridge Regressor with L2 regularization in the loss function.
 
         Args:
             input_feature_dim: Dimensionality of input features
             num_classes: Unused for regression, kept for compatibility
             output_dim: Number of target variables for regression
-            alpha: Ridge regularization strength (L2 penalty coefficient).
-                   This is converted to weight_decay for the SGD optimizer.
             lr_options: Learning rates to try in grid search.
-            wd_options: If provided, overrides the default weight_decay (2*alpha).
+            wd_options: L2 regularization strengths to try in grid search.
             n_epochs: Maximum number of training epochs.
             patience: Early stopping patience.
             batch_size: Batch size for training.
             device: Device to use ('cuda' or 'cpu').
             ceiling: Optional ceiling values for normalized metrics.
             scheduler_type: Type of LR scheduler to use. Options:
-                            'reduce_on_plateau' (default): Adaptive LR based on validation score.
+                            'reduce_on_plateau': Adaptive LR based on validation score.
                             'warmup_stable_decay': Pre-defined schedule with warmup, stable, and decay phases.
+                            'warmup_cosine' (default): Warmup followed by cosine annealing.
+            correlation_weight: Weight for correlation/CCC loss in combined/ccc_mse modes (default: 0.5).
+            loss_type: Loss function type (default: 'mse'). Options:
+                       'mse': Mean squared error only
+                       'correlation': Pearson correlation only (1 - corr)
+                       'combined': (1-w)*MSE + w*(1-corr) - prone to scale collapse
+                       'ccc': Concordance Correlation Coefficient (RECOMMENDED) - handles scale naturally
+                       'ccc_mse': (1-w)*MSE + w*(1-CCC) - CCC with MSE for absolute error
         """
         self.alpha = [0, 0.05, 0.1]  # , 0.2, 0.25, 0.3, 0.35, 0.1]
         self._mean, self._std = None, None
-        # Validate and store the scheduler type
-        if scheduler_type not in ['reduce_on_plateau', 'warmup_stable_decay', 'deterministic_scheduler']:
+        self.correlation_weight = correlation_weight
+        # Use true L2 regularization in loss instead of weight decay
+        # This matches sklearn ridge exactly and allows gradients to flow for finetuning
+        self.use_l2_in_loss = True
+
+        # Validate loss type
+        valid_loss_types = ['mse', 'correlation', 'combined', 'ccc', 'ccc_mse']
+        if loss_type not in valid_loss_types:
             raise ValueError(
-                f"Invalid scheduler_type: {scheduler_type}. Choose 'reduce_on_plateau' or 'warmup_stable_decay'.")
+                f"Invalid loss_type: {loss_type}. Choose from {valid_loss_types}")
+        self.loss_type = loss_type
+
+        # Validate and store the scheduler type
+        if scheduler_type not in ['reduce_on_plateau', 'warmup_stable_decay', 'deterministic_scheduler', 'warmup_cosine']:
+            raise ValueError(
+                f"Invalid scheduler_type: {scheduler_type}. Choose 'reduce_on_plateau', 'warmup_stable_decay', or 'warmup_cosine'.")
         self.scheduler_type = scheduler_type
 
+        effective_lr_options = lr_options if lr_options else [1e-3, 1e-4]
         effective_wd_options = wd_options if wd_options else [
             2 * alpha for alpha in self.alpha]
 
@@ -326,7 +355,7 @@ class OnlineLinearRegressor(OnlineMetric):
             num_classes=output_dim,
             input_feature_dim=input_feature_dim,
             internal_model_type="linear",
-            lr_options=lr_options if lr_options else [1e-3, 1e-4],
+            lr_options=effective_lr_options,
             wd_options=effective_wd_options,
             n_epochs=n_epochs,
             patience=patience,
@@ -334,6 +363,7 @@ class OnlineLinearRegressor(OnlineMetric):
             device=device,
             ceiling=ceiling,
             task_type="regression",
+            scheduler_type=scheduler_type,
         )
         self.internal_output_dim = output_dim
 
@@ -380,6 +410,63 @@ class OnlineLinearRegressor(OnlineMetric):
             return (features - self._mean) / self._std
         return features
 
+    @torch.no_grad()
+    def _precompute_label_normalization_stats(self, dataloader):
+        """
+        Computes mean and std for label normalization in a single pass.
+        This stabilizes SGD training by normalizing targets to ~N(0,1).
+        """
+        n = 0
+        mean = None
+        M2 = None
+
+        for _, batch_labels in tqdm(dataloader, desc="Pre-computing label normalization stats"):
+            if isinstance(batch_labels, tuple):
+                labels = batch_labels[1] if len(
+                    batch_labels) > 1 else batch_labels[0]
+            else:
+                labels = batch_labels
+            labels = labels.to(self.device).float()
+
+            # Handle different label shapes
+            if labels.ndim == 1:
+                labels = labels.unsqueeze(1)
+            elif labels.ndim == 3:
+                N, T, D = labels.shape
+                labels = labels.reshape(N * T, D)
+
+            m = labels.shape[0]
+            batch_mean = labels.mean(dim=0)
+            batch_M2 = ((labels - batch_mean) ** 2).sum(dim=0)
+
+            if mean is None:
+                mean = batch_mean.clone()
+                M2 = batch_M2.clone()
+                n = m
+                continue
+
+            delta = batch_mean - mean
+            new_n = n + m
+            mean = mean + delta * (m / new_n)
+            M2 = M2 + batch_M2 + delta.pow(2) * (n * m / new_n)
+            n = new_n
+
+        var = M2 / max(n - 1, 1)
+        std = var.sqrt().clamp_min(1e-8)
+        self._label_mean, self._label_std = mean, std
+
+    def _normalize_labels(self, labels: torch.Tensor) -> torch.Tensor:
+        """Normalize labels to zero mean, unit variance."""
+        if self._label_mean is not None and self._label_std is not None:
+            return (labels - self._label_mean) / self._label_std
+        return labels
+
+    def _denormalize_predictions(self, predictions: torch.Tensor) -> torch.Tensor:
+        """Denormalize predictions back to original scale."""
+        if self._label_mean is not None and self._label_std is not None:
+            return predictions * self._label_std + self._label_mean
+        return predictions
+
     def train_and_evaluate(
         self,
         extractor: 'OnlineFeatureExtractor',
@@ -401,6 +488,9 @@ class OnlineLinearRegressor(OnlineMetric):
         Returns:
             A dictionary containing final evaluation scores and model details.
         """
+        # Lazy import of loss functions to avoid circular imports
+        pearson_correlation_loss, compute_scale_ratio, ccc_loss = _import_loss_functions()
+
         active_scheduler_type = scheduler_type if scheduler_type is not None else self.scheduler_type
 
         data_sample, labels_tensor = next(iter(train_dataloader))
@@ -412,9 +502,15 @@ class OnlineLinearRegressor(OnlineMetric):
         current_train_loader = train_dataloader
         val_loader_internal = val_dataloader
 
+        # Initialize normalization stats
+        self._label_mean, self._label_std = None, None
+
         if self.internal_model_type != "attention":
             self._precompute_normalization_stats(
                 extractor, current_train_loader)
+
+        # Precompute label normalization stats (stabilizes SGD training)
+        self._precompute_label_normalization_stats(current_train_loader)
 
         param_grid = list(itertools.product(self.lr_options, self.wd_options))
 
@@ -424,12 +520,17 @@ class OnlineLinearRegressor(OnlineMetric):
 
             internal_model = self._get_internal_model()
             internal_model = nn.DataParallel(internal_model)
+            # When using L2 in loss, set weight_decay=0 to avoid double regularization
+            # This ensures gradients flow properly for model finetuning
+            optimizer_wd = 0.0 if self.use_l2_in_loss else wd
             optimizer = optim.SGD(
                 internal_model.parameters(),
                 lr=lr,
-                weight_decay=wd,
+                weight_decay=optimizer_wd,
                 momentum=0  # To make your SGD process as close as possible to the optimization problem that Ridge regression solves
             )
+            # Store current alpha for L2 loss computation
+            current_l2_alpha = wd if self.use_l2_in_loss else 0.0
 
             if active_scheduler_type == 'reduce_on_plateau':
                 scheduler = ReduceLROnPlateau(
@@ -455,6 +556,17 @@ class OnlineLinearRegressor(OnlineMetric):
                     optimizer, start_factor=1.0, end_factor=0.0, total_iters=decay_steps)
                 scheduler = SequentialLR(optimizer, schedulers=[warmup_sched, stable_sched, decay_sched], milestones=[
                                          warmup_steps, warmup_steps + stable_steps])
+            elif active_scheduler_type == 'warmup_cosine':
+                # Warmup for 5 epochs, then cosine decay to near-zero
+                total_steps = self.n_epochs * len(current_train_loader)
+                warmup_steps = 5 * len(current_train_loader)  # 5 epochs warmup
+                cosine_steps = total_steps - warmup_steps
+                warmup_sched = LinearLR(
+                    optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps)
+                cosine_sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=cosine_steps, eta_min=1e-6)
+                scheduler = SequentialLR(optimizer, schedulers=[
+                                         warmup_sched, cosine_sched], milestones=[warmup_steps])
             else:
                 raise ValueError(
                     f"Unknown scheduler_type: {active_scheduler_type}")
@@ -476,7 +588,8 @@ class OnlineLinearRegressor(OnlineMetric):
                     current_train_loader, desc=f"Epoch {epoch+1}/{self.n_epochs}", leave=False)
                 for batch_idx, (batch_data, batch_labels_raw) in enumerate(batch_bar):
                     optimizer.zero_grad()
-                    labels = self._unpack_labels(batch_labels_raw)
+                    labels_raw = self._unpack_labels(batch_labels_raw)
+                    labels = self._normalize_labels(labels_raw)  # Normalize for training
 
                     if self.use_mixed_precision:
                         with torch.amp.autocast('cuda'):
@@ -489,7 +602,31 @@ class OnlineLinearRegressor(OnlineMetric):
                             features = self._normalize_features(features)
                             outputs = internal_model(features)
                             outputs = torch.clamp(outputs, -10.0, +10.0)
-                            loss = nn.functional.mse_loss(outputs, labels)
+                            mse_loss = nn.functional.mse_loss(outputs, labels)
+                            # Compute loss based on loss_type
+                            if self.loss_type == 'mse':
+                                loss = mse_loss
+                            elif self.loss_type == 'correlation':
+                                loss = pearson_correlation_loss(outputs, labels)
+                            elif self.loss_type == 'ccc':
+                                loss = ccc_loss(outputs, labels)
+                            elif self.loss_type == 'ccc_mse':
+                                ccc_loss_val = ccc_loss(outputs, labels)
+                                loss = (1 - self.correlation_weight) * mse_loss + \
+                                    self.correlation_weight * ccc_loss_val
+                            else:  # combined
+                                corr_loss = pearson_correlation_loss(outputs, labels)
+                                loss = (1 - self.correlation_weight) * \
+                                    mse_loss + self.correlation_weight * corr_loss
+
+                            # Add true L2 regularization to loss (matches sklearn ridge exactly)
+                            # This allows gradients to flow for model finetuning
+                            if self.use_l2_in_loss and current_l2_alpha > 0:
+                                l2_reg = 0.0
+                                for param in internal_model.parameters():
+                                    l2_reg = l2_reg + torch.sum(param ** 2)
+                                loss = loss + current_l2_alpha * l2_reg
+
                             loss = self._stabilize_loss(loss)
                         scaler.scale(loss).backward()
                         scaler.unscale_(optimizer)
@@ -507,7 +644,31 @@ class OnlineLinearRegressor(OnlineMetric):
                         features = self._normalize_features(features)
                         outputs = internal_model(features)
                         outputs = torch.clamp(outputs, -10.0, +10.0)
-                        loss = nn.functional.mse_loss(outputs, labels)
+                        mse_loss = nn.functional.mse_loss(outputs, labels)
+                        # Compute loss based on loss_type
+                        if self.loss_type == 'mse':
+                            loss = mse_loss
+                        elif self.loss_type == 'correlation':
+                            loss = pearson_correlation_loss(outputs, labels)
+                        elif self.loss_type == 'ccc':
+                            loss = ccc_loss(outputs, labels)
+                        elif self.loss_type == 'ccc_mse':
+                            ccc_loss_val = ccc_loss(outputs, labels)
+                            loss = (1 - self.correlation_weight) * mse_loss + \
+                                self.correlation_weight * ccc_loss_val
+                        else:  # combined
+                            corr_loss = pearson_correlation_loss(outputs, labels)
+                            loss = (1 - self.correlation_weight) * \
+                                mse_loss + self.correlation_weight * corr_loss
+
+                        # Add true L2 regularization to loss (matches sklearn ridge exactly)
+                        # This allows gradients to flow for model finetuning
+                        if self.use_l2_in_loss and current_l2_alpha > 0:
+                            l2_reg = 0.0
+                            for param in internal_model.parameters():
+                                l2_reg = l2_reg + torch.sum(param ** 2)
+                            loss = loss + current_l2_alpha * l2_reg
+
                         loss = self._stabilize_loss(loss)
                         loss.backward()
                         torch.nn.utils.clip_grad_norm_(
@@ -518,22 +679,39 @@ class OnlineLinearRegressor(OnlineMetric):
                         scheduler.step()
 
                     total_train_loss += loss.item()
-                    train_preds.append(outputs.detach().cpu())
-                    train_true.append(labels.detach().cpu())
+                    # Denormalize predictions for metrics
+                    outputs_denorm = self._denormalize_predictions(outputs)
+                    train_preds.append(outputs_denorm.detach().cpu())
+                    train_true.append(labels_raw.detach().cpu())
                     batch_mse = nn.functional.mse_loss(outputs, labels).item()
+
+                    # Compute scale ratio for monitoring
+                    with torch.no_grad():
+                        scale_ratio = compute_scale_ratio(outputs, labels).item()
+
                     batch_bar.set_postfix(
-                        {"batch_mse": f"{batch_mse:.4f}", "loss": f"{loss.item():.4f}"})
+                        {"batch_mse": f"{batch_mse:.4f}", "loss": f"{loss.item():.4f}", "scale_ratio": f"{scale_ratio:.3f}"})
 
                     if wandb.run:
-                        wandb.log({
+                        log_dict = {
                             "train/loss":   loss.item(),
                             "train/mse": batch_mse,
+                            "train/scale_ratio": scale_ratio,
                             "train/lr":            scheduler.get_last_lr()[0],
                             "train/epoch":         epoch,
                             "train/batch_idx":     batch_idx,
                             "train/grid_lr":       lr,
                             "train/grid_wd":       wd,
-                        }, step=getattr(self, "global_step", 0))
+                            "train/loss_type": self.loss_type,
+                        }
+                        # Log component losses for debugging
+                        if self.loss_type in ['correlation', 'combined']:
+                            log_dict["train/corr_loss"] = pearson_correlation_loss(
+                                outputs, labels).item()
+                        if self.loss_type in ['ccc', 'ccc_mse']:
+                            log_dict["train/ccc_loss"] = ccc_loss(
+                                outputs, labels).item()
+                        wandb.log(log_dict, step=getattr(self, "global_step", 0))
                         self.global_step = getattr(self, "global_step", 0) + 1
 
                 avg_train_loss = total_train_loss / len(current_train_loader)
@@ -541,8 +719,11 @@ class OnlineLinearRegressor(OnlineMetric):
                 train_true_all = torch.cat(train_true)
                 train_mse = mean_squared_error(
                     train_true_all.numpy(), train_preds_all.numpy())
-                train_corr = self._calculate_validation_score(
+                train_score = self._calculate_validation_score(
                     train_true_all, train_preds_all)
+                # Extract correlation (train_score may be tuple for regression)
+                train_corr = train_score[0] if isinstance(
+                    train_score, tuple) else train_score
 
                 if wandb.run:
                     wandb.log({
@@ -556,7 +737,7 @@ class OnlineLinearRegressor(OnlineMetric):
                     val_bar = tqdm(
                         val_loader_internal, desc=f"Epoch {epoch+1} Validation", leave=False)
                     for val_batch_data, val_batch_labels_raw in val_bar:
-                        labels = self._unpack_labels(val_batch_labels_raw)
+                        labels_raw = self._unpack_labels(val_batch_labels_raw)
                         if self.use_mixed_precision:
                             with torch.amp.autocast('cuda'):
                                 if isinstance(val_batch_data, dict):
@@ -576,8 +757,10 @@ class OnlineLinearRegressor(OnlineMetric):
                                     val_batch_data.to(self.device))
                             features = self._normalize_features(features)
                             outputs = internal_model(features)
-                        val_true.append(labels.cpu())
-                        val_preds.append(outputs.cpu())
+                        # Denormalize predictions for metrics
+                        outputs_denorm = self._denormalize_predictions(outputs)
+                        val_true.append(labels_raw.cpu())
+                        val_preds.append(outputs_denorm.cpu())
 
                 val_preds_all = torch.cat(val_preds)
                 val_true_all = torch.cat(val_true)
@@ -586,19 +769,23 @@ class OnlineLinearRegressor(OnlineMetric):
                 val_score = self._calculate_validation_score(
                     val_true_all, val_preds_all)
 
+                # Extract correlation for scheduler and comparisons (val_score may be tuple for regression)
+                val_corr = val_score[0] if isinstance(
+                    val_score, tuple) else val_score
+
                 if active_scheduler_type == 'reduce_on_plateau':
-                    scheduler.step(val_score)
+                    scheduler.step(val_corr)
 
                 epoch_bar.set_postfix({"train_mse": f"{train_mse:.5f}", "val_mse": f"{val_mse:.5f}",
-                                      "train_corr": f"{train_corr:.5f}", "val_corr": f"{val_score:.5f}"})
+                                      "train_corr": f"{train_corr:.5f}", "val_corr": f"{val_corr:.5f}"})
 
                 if wandb.run:
                     wandb.log({
                         "val/mse": val_mse,
                     }, step=getattr(self, "global_step", 0))
 
-                if val_score > current_best_val_epoch_score:
-                    current_best_val_epoch_score = val_score
+                if val_corr > current_best_val_epoch_score:
+                    current_best_val_epoch_score = val_corr
                     current_best_model_state_epoch = internal_model.module.state_dict()
                     epochs_no_improve = 0
                 else:
@@ -630,7 +817,7 @@ class OnlineLinearRegressor(OnlineMetric):
                 test_batch_bar = tqdm(
                     test_dataloader, desc="Evaluating on Test Set", leave=False)
                 for test_batch_data, test_batch_labels_raw in test_batch_bar:
-                    labels = self._unpack_labels(test_batch_labels_raw)
+                    labels_raw = self._unpack_labels(test_batch_labels_raw)
                     if self.use_mixed_precision:
                         with torch.amp.autocast('cuda'):
                             if isinstance(test_batch_data, dict):
@@ -650,8 +837,10 @@ class OnlineLinearRegressor(OnlineMetric):
                                 test_batch_data.to(self.device))
                         features = self._normalize_features(features)
                         outputs = best_model(features)
-                    test_preds_all.append(outputs.cpu())
-                    test_true_all.append(labels.cpu())
+                    # Denormalize predictions for metrics
+                    outputs_denorm = self._denormalize_predictions(outputs)
+                    test_preds_all.append(outputs_denorm.cpu())
+                    test_true_all.append(labels_raw.cpu())
 
             test_preds_all = torch.cat(test_preds_all)
             test_true_all = torch.cat(test_true_all)
@@ -715,15 +904,21 @@ class OnlineAttentionRegressor(OnlineLinearRegressor):
         self.alpha = [0, 0.05, 0.1]
         self._mean, self._std = None, None
 
-        if scheduler_type not in ['reduce_on_plateau', 'warmup_stable_decay', 'deterministic_scheduler']:
+        if scheduler_type not in ['reduce_on_plateau', 'warmup_stable_decay', 'deterministic_scheduler', 'warmup_cosine']:
             raise ValueError(
-                f"Invalid scheduler_type: {scheduler_type}. Choose 'reduce_on_plateau' or 'warmup_stable_decay'.")
+                f"Invalid scheduler_type: {scheduler_type}. Choose 'reduce_on_plateau', 'warmup_stable_decay', or 'warmup_cosine'.")
         self.scheduler_type = scheduler_type
 
         effective_wd_options = wd_options if wd_options else [
             2 * alpha for alpha in self.alpha]
 
         self.internal_model_type = "attention"
+
+        # Initialize loss_type and L2 settings for compatibility with parent's train_and_evaluate
+        self.loss_type = 'mse'
+        self.use_l2_in_loss = True
+        self.correlation_weight = 0.5
+
         # Call OnlineMetric.__init__ directly, skipping OnlineLinearRegressor's __init__
         OnlineMetric.__init__(
             self,
@@ -738,5 +933,6 @@ class OnlineAttentionRegressor(OnlineLinearRegressor):
             device=device,
             ceiling=ceiling,
             task_type="regression",
+            scheduler_type=scheduler_type,
         )
         self.internal_output_dim = output_dim

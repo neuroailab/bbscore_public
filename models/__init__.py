@@ -12,7 +12,6 @@ MODEL_MODULES = [
     "convlstm",
     "cornet",
     "clip",
-    "cwm",
     "dfm",
     "dino",
     "dinov2",

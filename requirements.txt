@@ -15,7 +15,7 @@ scikit-image
 ipdb
 matplotlib
 tqdm
-timm==1.0.9
+timm==0.9.16
 lpips
 chardet
 omegaconf
@@ -37,8 +37,25 @@ albumentations
 h5netcdf
 gdown
 scikit-learn
+progressbar2
+pandas
+pyyaml
+huggingface-hub
 
-# mmengine imports
+# Audio/video processing
+decord
+librosa
+soundfile
+
+# Deep learning utilities
+pytorch-lightning
+geotorch
+torchdiffeq
+
+# mmengine/mmaction for SlowFast models
+mmengine
+mmaction2
+mmcv>=2.0.0
 importlib-metadata<5
 
 # git model imports
