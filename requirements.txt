@@ -42,6 +42,8 @@ pandas
 psutil
 pyyaml
 huggingface-hub
+wandb
+brainscore-core
 
 # Audio/video processing
 decord

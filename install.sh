@@ -19,7 +19,7 @@ set -e  # Exit on error
 # ============================================================================
 
 ENV_NAME="bbscore"
-PYTHON_VERSION="3.10"
+PYTHON_VERSION="3.11"
 CPU_ONLY=false
 SKIP_CONDA=false
 DATA_DIR=""
@@ -860,18 +860,43 @@ fi
 
 print_header "Installing Dependencies"
 
-# Install requirements first (without decord which may fail on some platforms)
 REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 if [ -f "$REQUIREMENTS_FILE" ]; then
-    print_info "Installing from requirements.txt (excluding decord)..."
-    # Install requirements, filtering out decord line (we'll handle it separately)
-    grep -v "^decord" "$REQUIREMENTS_FILE" | $ENV_PIP install -r /dev/stdin && \
-        print_success "Dependencies installed" || \
-        print_warning "Some dependencies failed"
+    # Step 4a: Install core packages (non-git dependencies) first
+    # This ensures basic dependencies are installed even if git packages fail
+    print_info "Installing core packages..."
+    grep -v "^decord" "$REQUIREMENTS_FILE" | grep -v "@ git+" | $ENV_PIP install -r /dev/stdin && \
+        print_success "Core packages installed" || \
+        print_warning "Some core packages failed"
+
+    # Step 4b: Install git-based packages one by one (more resilient to failures)
+    print_info "Installing git-based packages (this may take a while)..."
+
+    GIT_PACKAGES=$(grep "@ git+" "$REQUIREMENTS_FILE")
+    GIT_SUCCESS=0
+    GIT_FAILED=0
+    FAILED_PACKAGES=""
+
+    while IFS= read -r pkg; do
+        [ -z "$pkg" ] && continue
+        PKG_NAME=$(echo "$pkg" | cut -d'@' -f1 | tr -d ' ')
+        print_info "  Installing $PKG_NAME..."
+        if $ENV_PIP install "$pkg" --quiet 2>/dev/null; then
+            print_success "    $PKG_NAME installed"
+            ((GIT_SUCCESS++))
+        else
+            print_warning "    $PKG_NAME failed (non-critical)"
+            ((GIT_FAILED++))
+            FAILED_PACKAGES="$FAILED_PACKAGES $PKG_NAME"
+        fi
+    done <<< "$GIT_PACKAGES"
+
+    print_info "Git packages: $GIT_SUCCESS succeeded, $GIT_FAILED failed"
+    [ -n "$FAILED_PACKAGES" ] && print_warning "Failed packages:$FAILED_PACKAGES"
 else
     print_warning "requirements.txt not found"
     print_info "Installing essential packages..."
-    $ENV_PIP install numpy scipy scikit-learn pillow opencv-python tqdm h5py transformers timm wandb boto3 gdown google-cloud-storage
+    $ENV_PIP install numpy scipy scikit-learn pillow opencv-python tqdm h5py transformers timm wandb boto3 gdown google-cloud-storage psutil
 fi
 
 # Install decord (platform-specific handling)
@@ -1108,7 +1133,44 @@ chmod +x "$ACTIVATE_SCRIPT"
 print_success "Created activate_bbscore.sh"
 
 # ============================================================================
-# Step 6: System Check
+# Step 6: Verify Key Imports
+# ============================================================================
+
+print_header "Verifying Installation"
+
+print_info "Checking critical imports..."
+
+# Check core packages
+IMPORT_ERRORS=""
+for pkg in torch numpy scipy sklearn PIL cv2 tqdm h5py transformers timm wandb psutil; do
+    if $ENV_PYTHON -c "import $pkg" 2>/dev/null; then
+        print_success "  $pkg"
+    else
+        print_warning "  $pkg - NOT FOUND"
+        IMPORT_ERRORS="$IMPORT_ERRORS $pkg"
+    fi
+done
+
+# Check jepa (critical for some benchmarks)
+print_info "Checking jepa..."
+if $ENV_PYTHON -c "from jepa.src.models.attentive_pooler import AttentiveClassifier" 2>/dev/null; then
+    print_success "  jepa.src.models.attentive_pooler"
+else
+    print_warning "  jepa import failed"
+    print_info "  You may need to reinstall jepa:"
+    echo "    $ENV_PIP uninstall jepa -y"
+    echo "    $ENV_PIP install git+https://github.com/thekej/jepa.git"
+    IMPORT_ERRORS="$IMPORT_ERRORS jepa"
+fi
+
+if [ -n "$IMPORT_ERRORS" ]; then
+    print_warning "Missing packages:$IMPORT_ERRORS"
+    print_info "You can install missing packages manually with:"
+    echo "  $ENV_PIP install <package_name>"
+fi
+
+# ============================================================================
+# Step 7: System Check
 # ============================================================================
 
 print_header "System Check"
@@ -1127,6 +1189,13 @@ fi
 # ============================================================================
 
 print_header "Installation Complete!"
+
+# Summary of any issues
+if [ -n "$IMPORT_ERRORS" ]; then
+    echo -e "${YELLOW}Note: Some packages failed to install:${NC}$IMPORT_ERRORS"
+    echo "These may be optional. Check if your benchmarks need them."
+    echo ""
+fi
 
 # Use the explicit environment Python path
 PYTHON_PATH="$ENV_PYTHON"

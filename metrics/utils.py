@@ -1898,43 +1898,7 @@ class PositionalEncoding(nn.Module):
         return x
 
 
-# Assuming jepa.src.models.attentive_pooler.AttentiveClassifier is available
-# If not, its definition needs to be included here or properly imported.
-# For this example, I'll include a simplified version if it's not found.
-try:
-    from jepa.src.models.attentive_pooler import AttentiveClassifier
-except ImportError:
-    print("Warning: jepa.src.models.attentive_pooler.AttentiveClassifier not found. Using a placeholder.")
-    # Placeholder/Simplified AttentiveClassifier for demonstration
-
-    class AttentiveClassifier(nn.Module):
-        def __init__(self, embed_dim, num_classes, num_heads=4, depth=1, mlp_ratio=4.0, norm_layer=nn.LayerNorm):
-            super().__init__()
-            self.num_classes = num_classes
-            self.num_heads = num_heads
-
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-            self.transformer_layers = nn.ModuleList([
-                nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=int(
-                    embed_dim*mlp_ratio), batch_first=True, norm_first=True)
-                for _ in range(depth)
-            ])
-            self.norm = norm_layer(embed_dim)
-            self.head = nn.Linear(embed_dim, num_classes)
-
-        def forward(self, x):  # x is (N, T, E)
-            N = x.shape[0]
-            cls_tokens = self.cls_token.expand(N, -1, -1)  # (N, 1, E)
-            x = torch.cat((cls_tokens, x), dim=1)  # (N, 1+T, E)
-
-            for layer in self.transformer_layers:
-                # TransformerEncoderLayer expects (N, S, E) if batch_first=True
-                x = layer(x)
-
-            x = self.norm(x)
-            cls_token_out = x[:, 0]  # (N, E)
-            logits = self.head(cls_token_out)  # (N, num_classes)
-            return logits
+from jepa.src.models.attentive_pooler import AttentiveClassifier
 
 
 class TransformerInternalModel(nn.Module):
