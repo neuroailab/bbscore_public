@@ -756,6 +756,11 @@ if [ "$SKIP_CONDA" = true ] && [ -z "$CONDA_CMD" ]; then
 
     [ ! -d "$VENV_PATH" ] && python3 -m venv "$VENV_PATH"
     source "$VENV_PATH/bin/activate"
+
+    # Set explicit paths for venv
+    ENV_PIP="$VENV_PATH/bin/pip"
+    ENV_PYTHON="$VENV_PATH/bin/python"
+
     print_success "Virtual environment activated"
 else
     if conda env list 2>/dev/null | grep -q "^$ENV_NAME "; then
@@ -775,15 +780,20 @@ else
 
     print_info "Activating environment..."
     CONDA_BASE=$(conda info --base)
+    ENV_PATH="$CONDA_BASE/envs/$ENV_NAME"
     source "$CONDA_BASE/etc/profile.d/conda.sh"
     conda activate "$ENV_NAME"
+
+    # IMPORTANT: Use explicit paths to ensure we use the correct environment
+    ENV_PIP="$ENV_PATH/bin/pip"
+    ENV_PYTHON="$ENV_PATH/bin/python"
 fi
 
 print_success "Environment active"
-print_info "Python: $(python --version)"
+print_info "Python: $($ENV_PYTHON --version)"
 
 print_info "Upgrading pip..."
-pip install --upgrade pip --quiet
+$ENV_PIP install --upgrade pip --quiet
 
 # ============================================================================
 # Step 3: PyTorch Installation
@@ -793,13 +803,13 @@ print_header "Installing PyTorch"
 
 install_pytorch_cpu() {
     print_info "Installing CPU-only PyTorch..."
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    $ENV_PIP install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 }
 
 install_pytorch_cuda() {
     local cuda_version="$1"
     print_info "Installing PyTorch with CUDA $cuda_version..."
-    pip install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/cu${cuda_version}"
+    $ENV_PIP install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/cu${cuda_version}"
 }
 
 if [ "$CPU_ONLY" = true ]; then
@@ -807,7 +817,7 @@ if [ "$CPU_ONLY" = true ]; then
 elif [ "$OS" = "macos" ]; then
     if [ "$ARCH" = "arm64" ]; then
         print_info "Installing PyTorch with MPS support..."
-        pip install torch torchvision torchaudio
+        $ENV_PIP install torch torchvision torchaudio
     else
         install_pytorch_cpu
     fi
@@ -828,9 +838,9 @@ else
 fi
 
 print_info "Verifying PyTorch..."
-if python -c "import torch; print(f'PyTorch {torch.__version__}')" 2>/dev/null; then
+if $ENV_PYTHON -c "import torch; print(f'PyTorch {torch.__version__}')" 2>/dev/null; then
     print_success "PyTorch installed"
-    python -c "
+    $ENV_PYTHON -c "
 import torch
 if torch.cuda.is_available():
     print(f'  CUDA: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')
@@ -855,13 +865,13 @@ REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 if [ -f "$REQUIREMENTS_FILE" ]; then
     print_info "Installing from requirements.txt (excluding decord)..."
     # Install requirements, filtering out decord line (we'll handle it separately)
-    grep -v "^decord" "$REQUIREMENTS_FILE" | pip install -r /dev/stdin && \
+    grep -v "^decord" "$REQUIREMENTS_FILE" | $ENV_PIP install -r /dev/stdin && \
         print_success "Dependencies installed" || \
         print_warning "Some dependencies failed"
 else
     print_warning "requirements.txt not found"
     print_info "Installing essential packages..."
-    pip install numpy scipy scikit-learn pillow opencv-python tqdm h5py transformers timm wandb boto3 gdown google-cloud-storage
+    $ENV_PIP install numpy scipy scikit-learn pillow opencv-python tqdm h5py transformers timm wandb boto3 gdown google-cloud-storage
 fi
 
 # Install decord (platform-specific handling)
@@ -879,7 +889,7 @@ install_decord() {
 
     # Try pip (works on some platforms)
     print_info "Trying pip..."
-    if pip install decord 2>/dev/null; then
+    if $ENV_PIP install decord 2>/dev/null; then
         print_success "Decord installed via pip"
         return 0
     fi
@@ -966,7 +976,7 @@ install_decord() {
     # Install Python bindings
     cd ../python
     print_info "Installing decord Python bindings..."
-    if pip install .; then
+    if $ENV_PIP install .; then
         print_success "Decord built and installed successfully"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
@@ -1106,7 +1116,7 @@ print_header "System Check"
 CHECK_SCRIPT="$SCRIPT_DIR/check_system.py"
 if [ -f "$CHECK_SCRIPT" ]; then
     print_info "Running diagnostics..."
-    python "$CHECK_SCRIPT" --quick 2>/dev/null && print_success "System check passed" || \
+    $ENV_PYTHON "$CHECK_SCRIPT" --quick 2>/dev/null && print_success "System check passed" || \
         print_warning "System check reported issues (non-critical)"
 else
     print_warning "check_system.py not found, skipping"
@@ -1118,8 +1128,8 @@ fi
 
 print_header "Installation Complete!"
 
-# Get full Python path for display
-PYTHON_PATH=$(which python)
+# Use the explicit environment Python path
+PYTHON_PATH="$ENV_PYTHON"
 
 echo -e "${GREEN}${BOLD}BBScore is ready to use!${NC}"
 echo ""
