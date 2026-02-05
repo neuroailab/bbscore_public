@@ -2,8 +2,7 @@
 
 BBScore is a framework for benchmarking deep learning models against neural (fMRI, electrophysiology) and behavioral datasets. It handles model loading, stimulus preprocessing, feature extraction, and comparison with biological data.
 
-=======
-- **Simple Notebook For Loading MongoDB Data and Plotting**
+- **Simple Notebook For Loading Data and Plotting**
   [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/14T5IuhZJ6PZaOvhpUMH-uIFGrzyVb7Wt?usp=sharing)
 
 - **Data Analysis Notebook (By Josh Wilson)**
