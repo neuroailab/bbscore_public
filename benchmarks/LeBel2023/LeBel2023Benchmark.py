@@ -1,3 +1,4 @@
+from benchmarks.LeBel2023.LeBel2023TRBenchmark import LeBel2023TRBenchmark
 from benchmarks.BBS import BenchmarkScore
 from data.LeBel2023 import LeBel2023StimulusSet, LeBel2023Assembly
 from benchmarks import BENCHMARK_REGISTRY
@@ -53,7 +54,6 @@ class LeBel2023Benchmark(BenchmarkScore):
 BENCHMARK_REGISTRY["LeBel2023"] = LeBel2023Benchmark
 
 # --- TR-level benchmarks ---
-from benchmarks.LeBel2023.LeBel2023TRBenchmark import LeBel2023TRBenchmark
 
 for _subj in subjects:
     _tr_class_name = f"LeBel2023TR{_subj}"
