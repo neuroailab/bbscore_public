@@ -176,39 +176,25 @@ Using an incompatible metric will print a warning with the list of compatible op
 
 1. **Start with small experiments:**
    ```bash
-   python run.py --model resnet18 --layer _orig_mod.resnet.encoder.stages.3 --benchmark OnlineTVSDV1 --metric ridge
+   python run.py --model resnet18 --layer _orig_mod.resnet.encoder.stages.3 --benchmark NSDV1Shared --metric ridge
    ```
 
 2. **Scale up gradually:**
    ```bash
-   python run.py --model dinov2_base --layer blocks.11 --benchmark OnlineTVSDV1 --metric online_linear_regressor
-   ```
-
-3. **Using OnlineLinearRegressor:**
-   ```python
-   # Default: MSE loss with L2 regularization
-   from metrics import OnlineLinearRegressor
-
-   metric = OnlineLinearRegressor(
-       input_feature_dim=768,
-       loss_type='mse',  # Default: MSE + L2 regularization
-       n_epochs=100,
-   )
+   python run.py --model dinov2_base --layer blocks.11 --benchmark NSDV1Shared --metric ridge
    ```
 
 ---
 
 ## Available Components
 
-### Benchmarks
+### Benchmark Examples
 
 | Benchmark | Type | Memory | Description |
 |-----------|------|--------|-------------|
-| `OnlineTVSDV1` | Video | Low | Macaque V1 neural responses |
-| `OnlineTVSDV4` | Video | Low | Macaque V4 neural responses |
-| `OnlineTVSDIT` | Video | Low | Macaque IT neural responses |
-| `NSDV1Shared` | Image | Medium | Human fMRI V1 (NSD dataset) |
-| `V1SineGratingsBenchmark` | Image | Very Low | Synthetic V1 gratings |
+| `BMD_V1` | Video | Low | Macaque V1 neural responses |
+| `NSDV1Shared` | Image | Low | Human fMRI V1 (NSD dataset) |
+| `TVSDV4` | Video | High | Macaque V4 neural responses |
 | `SSV2Benchmark` | Video | High | Something-Something-V2 |
 | `LeBel2023{UTS01-08}` | Text/fMRI | Low | Language comprehension fMRI |
 | `LeBel2023TR{UTS01-08}` | Text/fMRI | Low | TR-level language encoding |
@@ -234,7 +220,7 @@ Using an incompatible metric will print a warning with the list of compatible op
 | Metric | GPU Required | Description |
 |--------|--------------|-------------|
 | `ridge` | No | Ridge regression (sklearn) |
-| `online_linear_regressor` | Yes | Online ridge with SGD and L2 regularization |
+| `online_linear_regressor` | Recommended but not required | Online ridge with SGD and L2 regularization |
 | `pls` | No | Partial Least Squares |
 | `rsa` | No | Representational Similarity Analysis |
 
