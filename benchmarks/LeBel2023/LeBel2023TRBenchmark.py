@@ -80,6 +80,7 @@ class LeBel2023TRBenchmark:
         self._register_hooks()
 
         self.metrics = {}
+        self.metric_params = {}
         self.use_ridge_smart_memory = False
 
         data_home = get_data_home()
@@ -274,8 +275,10 @@ class LeBel2023TRBenchmark:
         """Compatibility with run.py."""
         pass
 
-    def add_metric(self, name):
+    def add_metric(self, name, metric_params=None):
         self.metrics[name] = METRICS[name]
+        if metric_params:
+            self.metric_params[name] = metric_params
 
     def run(self):
         """

@@ -482,6 +482,7 @@ class OnlineAssemblyBenchmarkScorer:
         self.batch_size = batch_size
         self.debug = debug
         self.metrics = metrics or []
+        self.metric_params = {}
 
         # Setup Results Directory
         data_home = get_data_home()
@@ -489,10 +490,12 @@ class OnlineAssemblyBenchmarkScorer:
         self.results_dir = os.path.join(results_base, 'results')
         os.makedirs(self.results_dir, exist_ok=True)
 
-    def add_metric(self, metric_name):
+    def add_metric(self, metric_name, metric_params=None):
         """Adds a metric to the list of metrics to run."""
         if metric_name not in self.metrics:
             self.metrics.append(metric_name)
+        if metric_params:
+            self.metric_params[metric_name] = metric_params
 
     def _prepare_dataloader(self, source_data, target_data, shuffle=False):
         src_t = torch.tensor(source_data, dtype=torch.float32)
@@ -554,12 +557,14 @@ class OnlineAssemblyBenchmarkScorer:
             metric_cls = METRICS[metric_name]
 
             # Initialize Metric
-            metric = metric_cls(
-                input_feature_dim=input_dim,
-                output_dim=output_dim,
-                ceiling=ceiling,
-                batch_size=self.batch_size,
-            )
+            init_params = {
+                "input_feature_dim": input_dim,
+                "output_dim": output_dim,
+                "ceiling": ceiling,
+                "batch_size": self.batch_size,
+            }
+            init_params.update(self.metric_params.get(metric_name, {}))
+            metric = metric_cls(**init_params)
 
             # Compute
             res = metric.compute(
