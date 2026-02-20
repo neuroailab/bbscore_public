@@ -8,8 +8,6 @@ from ..scaling_models.scaling_model import ConvnextLargeImagenetFullSeed0Loader
 from ..resnext101wsl.resnext_wsl import ResNeXtWSL
 from ..s3d_text_video.s3d import S3DHowTo100M
 from ..videomae.videomae import VideoMAE
-from ..videoswin.videoswin import VideoSwin
-
 # --- Setup ---
 
 torch.backends.cudnn.enabled = True
@@ -124,18 +122,3 @@ class RandomVideoMAEV1L(VideoMAE):
         return model
 
 
-class RandomVideoSwinB(VideoSwin):
-    """
-    Randomized version of VideoSwin Base.
-    """
-
-    def get_model(self, identifier=None):
-        # Map to the specific key expected by VideoSwin class ("VideoSwin-B")
-        original_id = "VideoSwin-B"
-
-        model = super().get_model(original_id)
-
-        print(f"Randomizing weights for VideoSwin-B...")
-        reinitialize_model(model)
-
-        return model

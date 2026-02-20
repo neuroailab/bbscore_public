@@ -4,7 +4,6 @@ from .random_models import (
     RandomResnext101_32x8d_wsl,
     RandomS3DHowTo100M,
     RandomVideoMAEV1L,
-    RandomVideoSwinB,
 )
 
 # Register Random ConvNeXt
@@ -28,11 +27,5 @@ MODEL_REGISTRY["Random-s3d-HowTo100M"] = {
 # Register Random VideoMAE
 MODEL_REGISTRY["Random-VideoMAE-V1-L"] = {
     "class": RandomVideoMAEV1L,
-    "model_id_mapping": None
-}
-
-# Register Random VideoSwin
-MODEL_REGISTRY["Random-VideoSwin-B"] = {
-    "class": RandomVideoSwinB,
     "model_id_mapping": None
 }

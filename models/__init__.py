@@ -22,7 +22,6 @@ MODEL_MODULES = [
     "hubert",
     "glm",
     "hmax",
-    "I3D",
     "ijepa",
     "llama3",
     "mae",
@@ -47,22 +46,18 @@ MODEL_MODULES = [
     "scaling_models",
     "selavi",
     "simvp",
-    "slowfast",
     "swin",
     "tau",
     "torch_video",
     "timesformer",
-    "uniformer",
     "vgg",
     "voneresnet",
     "videomae",
-    "videoswin",
     "vit",
     "vjepa",
     "vjepa2",
     "wav2vec2",
     "whisper",
-    "X3D"
 ]
 
 for module_name in MODEL_MODULES:

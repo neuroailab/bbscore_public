@@ -56,12 +56,6 @@ pytorch-lightning
 geotorch
 torchdiffeq
 
-# mmengine/mmaction for SlowFast models
-mmengine
-mmaction2==1.1.0
-mmcv-lite==2.0.1
-importlib-metadata<5
-
 # git model imports
 r3m @ git+https://github.com/facebookresearch/r3m.git#egg=r3m
 selavi @ git+https://github.com/YingtianDt/selavi.git

@@ -73,9 +73,6 @@ MODEL_SPECS = {
     "vivit_base": {"params": 89.0, "vram": 8.0, "type": "video"},
 
     # 3D CNNs
-    "slowfast_r50": {"params": 34.0, "vram": 6.0, "type": "video"},
-    "slowfast_r101": {"params": 53.0, "vram": 8.0, "type": "video"},
-    "i3d": {"params": 12.0, "vram": 4.0, "type": "video"},
     "r3d_18": {"params": 33.0, "vram": 4.0, "type": "video"},
 
     # MAE family
