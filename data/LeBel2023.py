@@ -750,6 +750,61 @@ class LeBel2023AudioTRStimulusSet(BaseDataset):
 
         return segments, n_trs
 
+    def get_tr_audio_segments_with_context(self, story_idx, context_duration):
+        """
+        Slice a story's audio into TR-sized windows, each padded with
+        preceding audio context up to `context_duration` seconds total.
+
+        For each TR, the returned segment is:
+            [preceding_context ... | current_2s_TR]
+        Zero-padded on the left for early TRs that don't have enough history.
+
+        Args:
+            story_idx: int
+            context_duration: float, total segment duration in seconds
+
+        Returns:
+            segments: list of np.ndarray, each shape (context_samples,)
+            n_trs: int
+        """
+        audio = self._load_audio(self.audio_paths[story_idx])
+        samples_per_tr = int(self.tr_duration * self.sample_rate)
+        context_samples = int(context_duration * self.sample_rate)
+        n_trs = len(audio) // samples_per_tr
+
+        if n_trs == 0:
+            return [], 0
+
+        segments = []
+        for i in range(n_trs):
+            tr_end = (i + 1) * samples_per_tr
+            tr_start = max(0, tr_end - context_samples)
+            raw_segment = audio[tr_start:tr_end]
+
+            # Zero-pad on the left if not enough preceding audio
+            if len(raw_segment) < context_samples:
+                padded = np.zeros(context_samples, dtype=np.float32)
+                padded[context_samples - len(raw_segment):] = raw_segment
+                segments.append(padded)
+            else:
+                segments.append(raw_segment)
+
+        # Partial last segment (same logic as get_tr_audio_segments)
+        remainder = len(audio) - n_trs * samples_per_tr
+        if remainder > samples_per_tr // 2:
+            tr_end = len(audio)
+            tr_start = max(0, tr_end - context_samples)
+            raw_segment = audio[tr_start:tr_end]
+            if len(raw_segment) < context_samples:
+                padded = np.zeros(context_samples, dtype=np.float32)
+                padded[context_samples - len(raw_segment):] = raw_segment
+                segments.append(padded)
+            else:
+                segments.append(raw_segment)
+            n_trs += 1
+
+        return segments, n_trs
+
     def __len__(self):
         return len(self.story_names)
 

@@ -14,6 +14,7 @@ class Whisper:
         }
         self.processor = None
         self.static = True
+        self.audio_context_duration = 30.0  # Whisper expects 30s input
 
     def get_model(self, identifier):
         hf_name = self.model_mappings[identifier]

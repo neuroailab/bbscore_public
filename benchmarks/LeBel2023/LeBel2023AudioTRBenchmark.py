@@ -174,7 +174,14 @@ class LeBel2023AudioTRBenchmark:
         Returns:
             features: (n_TRs, D) array
         """
-        segments, n_trs = stimulus_set.get_tr_audio_segments(story_idx)
+        # Use context-aware segments if model declares audio_context_duration
+        context_duration = getattr(
+            self.model_instance, 'audio_context_duration', None)
+        if context_duration is not None:
+            segments, n_trs = stimulus_set.get_tr_audio_segments_with_context(
+                story_idx, context_duration)
+        else:
+            segments, n_trs = stimulus_set.get_tr_audio_segments(story_idx)
 
         if n_trs == 0:
             return np.array([])
