@@ -53,33 +53,44 @@ class NSDStimulusSet(BaseDataset):
             ]
         )
 
+    _GCS_BASE_URL = 'https://storage.googleapis.com/bbscore_datasets/nsd'
+
+    _GDRIVE_FILE_IDS = {
+        'subj01': '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr',
+        'subj02': '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID',
+        'subj05': '11dPt3Llj6eAEDJnaRy8Ch5CxfeKijX_t',
+        'subj07': '1HX-6t4c6js6J_vP4Xo0h1fbK2WINpwem',
+    }
+
     def _download_nsd_data(self, subj: str):
         """Download NSD data for a subject (for images)."""
-        if subj == 'subj01':
-            file_id = '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr'
-        elif subj == 'subj02':
-            file_id = '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID'
-        elif subj == 'subj05':
-            file_id = '11dPt3Llj6eAEDJnaRy8Ch5CxfeKijX_t'
-        elif subj == 'subj07':
-            file_id = '1HX-6t4c6js6J_vP4Xo0h1fbK2WINpwem'
-        else:
+        if subj not in self._GDRIVE_FILE_IDS:
             raise ValueError(
                 "Invalid subject ID. Choose: 'subj01', 'subj02', 'subj05', 'subj07'."
             )
 
-        url = f'https://drive.google.com/uc?id={file_id}&export=download'
-        output = os.path.join(
-            self.root_dir, f'{subj}_nativesurface_nsdgeneral.pkl'
-        )
+        filename = f'{subj}_nativesurface_nsdgeneral.pkl'
+        output = os.path.join(self.root_dir, filename)
 
         if not os.path.exists(output) or self.overwrite:
-            self.fetch(
-                source=url,
-                filename=os.path.basename(output),
-                method='gdown',
-                force_download=self.overwrite,
-            )
+            gcs_url = f'{self._GCS_BASE_URL}/{filename}'
+            try:
+                self.fetch(
+                    source=gcs_url,
+                    filename=filename,
+                    method='http',
+                    force_download=self.overwrite,
+                )
+            except Exception as e:
+                print(f"GCS download failed ({e}), falling back to Google Drive...")
+                file_id = self._GDRIVE_FILE_IDS[subj]
+                url = f'https://drive.google.com/uc?id={file_id}&export=download'
+                self.fetch(
+                    source=url,
+                    filename=filename,
+                    method='gdown',
+                    force_download=self.overwrite,
+                )
         return np.load(output, allow_pickle=True)
 
     def _prepare_images(self, subj: str = 'subj01'):
@@ -136,33 +147,44 @@ class NSDAssembly(BaseDataset):
         self.test_fmri_data = None
         self.ncsnr_data = None
 
+    _GCS_BASE_URL = 'https://storage.googleapis.com/bbscore_datasets/nsd'
+
+    _GDRIVE_FILE_IDS = {
+        'subj01': '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr',
+        'subj02': '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID',
+        'subj05': '11dPt3Llj6eAEDJnaRy8Ch5CxfeKijX_t',
+        'subj07': '1HX-6t4c6js6J_vP4Xo0h1fbK2WINpwem',
+    }
+
     def _download_nsd_data(self, subj: str):
         """Download NSD data for a subject."""
-        if subj == 'subj01':
-            file_id = '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr'
-        elif subj == 'subj02':
-            file_id = '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID'
-        elif subj == 'subj05':
-            file_id = '11dPt3Llj6eAEDJnaRy8Ch5CxfeKijX_t'
-        elif subj == 'subj07':
-            file_id = '1HX-6t4c6js6J_vP4Xo0h1fbK2WINpwem'
-        else:
+        if subj not in self._GDRIVE_FILE_IDS:
             raise ValueError(
-                "Invalid subject ID.  Choose: 'subj01', 'subj02', 'subj05', 'subj07'."
+                "Invalid subject ID. Choose: 'subj01', 'subj02', 'subj05', 'subj07'."
             )
 
-        url = f'https://drive.google.com/uc?id={file_id}&export=download'
-        output = os.path.join(
-            self.root_dir, f'{subj}_nativesurface_nsdgeneral.pkl'
-        )
+        filename = f'{subj}_nativesurface_nsdgeneral.pkl'
+        output = os.path.join(self.root_dir, filename)
 
         if not os.path.exists(output) or self.overwrite:
-            self.fetch(
-                source=url,
-                filename=os.path.basename(output),
-                method='gdown',
-                force_download=self.overwrite,
-            )
+            gcs_url = f'{self._GCS_BASE_URL}/{filename}'
+            try:
+                self.fetch(
+                    source=gcs_url,
+                    filename=filename,
+                    method='http',
+                    force_download=self.overwrite,
+                )
+            except Exception as e:
+                print(f"GCS download failed ({e}), falling back to Google Drive...")
+                file_id = self._GDRIVE_FILE_IDS[subj]
+                url = f'https://drive.google.com/uc?id={file_id}&export=download'
+                self.fetch(
+                    source=url,
+                    filename=filename,
+                    method='gdown',
+                    force_download=self.overwrite,
+                )
         self.data[subj] = np.load(output, allow_pickle=True)
 
     def _get_metadata_concat_hemi(self, Y: Dict) -> Tuple[np.ndarray, pd.DataFrame]:
