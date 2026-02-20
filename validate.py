@@ -281,110 +281,81 @@ def run_tier2():
 
 
 # ========================================================================
-# Tier 3 — Data & Pipeline
+# Tier 3 — End-to-End Benchmarks
 # ========================================================================
 def run_tier3():
-    _header(3, "Data & Pipeline")
+    _header(3, "End-to-End Benchmarks")
     print(
         "  First run downloads datasets from the cloud.\n"
         "  This may take several minutes depending on your connection.\n"
     )
     passed = True
 
-    import numpy as np
+    import torch
 
-    # --- Vision data: NSD ---
-    _section("Vision Data (NSD)")
+    # --- Vision: ResNet-18 on NSDV1 with RSA ---
+    _section("Vision Benchmark (resnet18 + NSDV1 + RSA)")
     try:
         t0 = time.time()
-        from data.NSDShared import NSDStimulusSet, NSDAssembly
+        from benchmarks.NSD.NSDSharedBenchmark import NSDV1Shared
 
-        stim = NSDStimulusSet()
-        n_images = len(stim)
-        assembly = NSDAssembly(regions=['V1'])
-        fmri, ncsnr = assembly.get_assembly()
+        bench = NSDV1Shared(
+            model_identifier="resnet18",
+            layer_name="_orig_mod.resnet.encoder.stages.3",
+            batch_size=4,
+        )
+        bench.add_metric("rsa")
+        results = bench.run()
+
+        # Extract RSA score from single-layer result
+        layer_key = list(results.keys())[0]
+        rsa_scores = results[layer_key]['metrics']['rsa']
+        spearman = rsa_scores['rsa_scores']['spearman']
 
         elapsed = time.time() - t0
         _pass(
-            f"NSD loaded: {n_images} images, "
-            f"fMRI shape {fmri.shape} ({elapsed:.0f}s)"
+            f"ResNet-18 x NSDV1 RSA: "
+            f"spearman={spearman:.4f} ({elapsed:.0f}s)"
         )
     except Exception as e:
-        _fail(f"NSD: {e}")
+        _fail(f"Vision benchmark: {e}")
         traceback.print_exc()
         passed = False
 
-    # --- Language data: LeBel2023 ---
-    _section("Language Data (LeBel2023)")
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # --- Language: GPT-2 Small on LeBel2023 with Ridge ---
+    _section("Language Benchmark (gpt2_small + LeBel2023 + Ridge)")
     try:
         t0 = time.time()
-        from data.LeBel2023 import (
-            LeBel2023TRStimulusSet, LeBel2023TRAssembly
-        )
+        from benchmarks.LeBel2023.LeBel2023Benchmark import LeBel2023Benchmark
 
-        stim = LeBel2023TRStimulusSet(tr_duration=2.0)
-        assembly = LeBel2023TRAssembly(subjects=['UTS01'])
-        story_fmri, ncsnr = assembly.get_assembly(
-            story_names=stim.story_names
+        bench = LeBel2023Benchmark(
+            model_identifier="gpt2_small",
+            layer_name="transformer.h.11",
+            batch_size=4,
         )
+        bench.add_metric("ridge")
+        results = bench.run()
 
-        n_stories = len(story_fmri)
-        sample_story = list(story_fmri.keys())[0]
-        sample_shape = story_fmri[sample_story].shape
+        # Extract ridge score from single-layer result
+        layer_key = list(results.keys())[0]
+        ridge_results = results[layer_key]['metrics']['ridge']
+        pearson = ridge_results['median_ceiled_pearson']
 
         elapsed = time.time() - t0
         _pass(
-            f"LeBel2023 loaded: {n_stories} stories, "
-            f"sample shape {sample_shape} ({elapsed:.0f}s)"
+            f"GPT-2 Small x LeBel2023 Ridge: "
+            f"median_ceiled_pearson={pearson:.4f} ({elapsed:.0f}s)"
         )
     except Exception as e:
-        _fail(f"LeBel2023: {e}")
+        _fail(f"Language benchmark: {e}")
         traceback.print_exc()
         passed = False
 
-    # --- Metric pipeline: ridge regression ---
-    _section("Metric Pipeline (ridge regression)")
-    try:
-        from sklearn.linear_model import RidgeCV
-        from sklearn.metrics import r2_score
-
-        rng = np.random.RandomState(42)
-        X = rng.randn(100, 768).astype(np.float32)
-        W = rng.randn(768, 50) * 0.1
-        y = (X @ W + rng.randn(100, 50) * 0.5).astype(np.float32)
-
-        model = RidgeCV(alphas=[0.01, 1.0, 100.0])
-        model.fit(X[:80], y[:80])
-        preds = model.predict(X[80:])
-        r2 = np.mean([
-            r2_score(y[80:, i], preds[:, i]) for i in range(50)
-        ])
-        _pass(f"Ridge OK (R2={r2:.3f} on synthetic data)")
-    except Exception as e:
-        _fail(f"Ridge regression: {e}")
-        passed = False
-
-    # --- Metric pipeline: temporal RSA ---
-    _section("Metric Pipeline (temporal RSA)")
-    try:
-        from scipy.spatial.distance import pdist
-        from scipy.stats import spearmanr
-
-        rng = np.random.RandomState(42)
-        feats = rng.randn(50, 768).astype(np.float32)
-        W = rng.randn(768, 100) * 0.1
-        neural = (feats @ W + rng.randn(50, 100) * 0.5).astype(
-            np.float32
-        )
-
-        model_rdm = pdist(feats, metric='correlation')
-        neural_rdm = pdist(neural, metric='correlation')
-        valid = ~(np.isnan(model_rdm) | np.isnan(neural_rdm))
-        rho, _ = spearmanr(model_rdm[valid], neural_rdm[valid])
-        _pass(f"Temporal RSA OK (rho={rho:.3f} on synthetic data)")
-    except Exception as e:
-        _fail(f"Temporal RSA: {e}")
-        passed = False
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return passed
 
@@ -451,7 +422,7 @@ def main():
     labels = {
         1: "Environment & Dependencies",
         2: "Model Loading & Inference",
-        3: "Data & Pipeline",
+        3: "End-to-End Benchmarks",
     }
 
     print(f"\n{_C.B}{'=' * 60}{_C.E}")
