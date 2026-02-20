@@ -119,7 +119,7 @@ python run.py --model resnet50 --layer _orig_mod.resnet.encoder.stages.3 --bench
 
 ### Validate Your Setup
 
-Before starting your project, run the validation script to confirm your machine can handle the full pipeline:
+Before starting your project, run the validation script to confirm your machine can handle the full pipeline. Note that this may take a while (~20 minutes) given we have to download the neural datasets.
 
 ```bash
 python validate.py
