@@ -2,7 +2,7 @@ import os
 import numpy as np
 from PIL import Image
 
-import imp
+import importlib.util
 import torch
 import requests
 import functools
@@ -100,7 +100,10 @@ class TAU:
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Config file not found at {config_path}")
 
-        config = imp.load_source(identifier, config_path).__dict__
+        spec = importlib.util.spec_from_file_location(identifier, config_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        config = mod.__dict__
         config = {k: v for k, v in config.items() if not k.startswith("__")}
         return config
 
