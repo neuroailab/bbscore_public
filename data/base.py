@@ -199,9 +199,23 @@ class BaseDataset(ABC):
         response = requests.get(url, stream=True, timeout=timeout)
         response.raise_for_status()
 
-        with open(filepath, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        total_size = response.headers.get('content-length')
+        chunk_size = 1024 * 1024  # 1 MB
+
+        if total_size is not None:
+            from tqdm import tqdm
+            total_size = int(total_size)
+            with open(filepath, "wb") as f, tqdm(
+                total=total_size, unit='B', unit_scale=True,
+                desc=os.path.basename(filepath),
+            ) as pbar:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    f.write(chunk)
+                    pbar.update(len(chunk))
+        else:
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    f.write(chunk)
 
         return filepath
 
