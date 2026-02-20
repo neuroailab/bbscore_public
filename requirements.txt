@@ -43,8 +43,6 @@ psutil
 pyyaml
 huggingface-hub
 wandb
-brainscore-core
-brainscore-brainio
 
 # Audio/video processing
 decord2
