@@ -343,6 +343,10 @@ def run_tier3():
         layer_key = list(results.keys())[0]
         ridge_results = results[layer_key]['metrics']['ridge']
         pearson = ridge_results['median_ceiled_pearson']
+        if hasattr(pearson, '__len__'):
+            pearson = float(pearson.mean())
+        else:
+            pearson = float(pearson)
 
         elapsed = time.time() - t0
         _pass(
