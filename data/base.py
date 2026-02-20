@@ -247,12 +247,93 @@ class BaseDataset(ABC):
         anonymous: bool = False,
         **kwargs,
     ) -> str:
-        """Download a file or directory from S3 using boto3. Handles both
-           authenticated and anonymous access.
+        """Download a file or directory from S3 using the AWS CLI for
+           parallel transfers. Falls back to boto3 if AWS CLI is unavailable.
         """
         print(f"Downloading {s3_path} to {target_dir} using S3...")
 
         # Parse bucket/key
+        path_parts = s3_path.split('//')[1].split('/', 1)
+        bucket_name = path_parts[0]
+        s3_key = path_parts[1] if len(path_parts) > 1 else ''
+
+        # Determine if this is a directory (ends with /) or single file
+        is_directory = s3_key.endswith('/') or not s3_key
+
+        # Try AWS CLI first (parallel transfers by default)
+        if self._try_aws_cli_s3(s3_path, target_dir, filename,
+                                anonymous, is_directory):
+            if is_directory:
+                return os.path.join(
+                    target_dir, filename or s3_key.rstrip('/').split('/')[-1])
+            else:
+                return os.path.join(
+                    target_dir, filename or s3_key.split('/')[-1])
+
+        # Fall back to boto3
+        print("AWS CLI not available, falling back to boto3...")
+        return self._fetch_s3_boto3(
+            s3_path, target_dir, filename, anonymous, **kwargs)
+
+    def _try_aws_cli_s3(
+        self,
+        s3_path: str,
+        target_dir: str,
+        filename: Optional[str] = None,
+        anonymous: bool = False,
+        is_directory: bool = False,
+    ) -> bool:
+        """Try downloading via AWS CLI (supports parallel transfers).
+           Returns True on success, False if CLI unavailable.
+        """
+        try:
+            subprocess.run(
+                ['aws', '--version'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return False
+
+        env = os.environ.copy()
+        cmd = ['aws', 's3']
+
+        if anonymous:
+            cmd.append('--no-sign-request')
+
+        if is_directory:
+            local_dir = os.path.join(
+                target_dir,
+                filename or s3_path.rstrip('/').split('/')[-1])
+            os.makedirs(local_dir, exist_ok=True)
+            cmd.extend(['sync', s3_path, local_dir])
+        else:
+            local_path = os.path.join(
+                target_dir, filename or s3_path.split('/')[-1])
+            cmd.extend(['cp', s3_path, local_path])
+
+        if not anonymous and self.aws_config:
+            env['AWS_ACCESS_KEY_ID'] = self.aws_config['default'].get(
+                'aws_access_key_id', '')
+            env['AWS_SECRET_ACCESS_KEY'] = self.aws_config['default'].get(
+                'aws_secret_access_key', '')
+            env['AWS_DEFAULT_REGION'] = self.aws_config['default'].get(
+                'region_name', 'us-east-1')
+
+        try:
+            subprocess.run(cmd, check=True, env=env)
+            return True
+        except subprocess.SubprocessError as e:
+            print(f"AWS CLI download failed: {e}")
+            return False
+
+    def _fetch_s3_boto3(
+        self,
+        s3_path: str,
+        target_dir: str,
+        filename: Optional[str] = None,
+        anonymous: bool = False,
+        **kwargs,
+    ) -> str:
+        """Fallback: download from S3 using boto3 (sequential)."""
         path_parts = s3_path.split('//')[1].split('/', 1)
         bucket_name = path_parts[0]
         s3_key = path_parts[1] if len(path_parts) > 1 else ''
@@ -276,7 +357,6 @@ class BaseDataset(ABC):
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
                 region_name=region_name,
-                **kwargs,
             )
         else:
             raise Exception(
