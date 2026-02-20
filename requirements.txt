@@ -47,7 +47,7 @@ brainscore-core
 brainscore-brainio
 
 # Audio/video processing
-decord
+decord2
 librosa
 soundfile
 
