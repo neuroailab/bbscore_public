@@ -302,7 +302,7 @@ def run_tier3():
         bench = NSDV1Shared(
             model_identifier="resnet18",
             layer_name="_orig_mod.resnet.encoder.stages.3",
-            batch_size=4,
+            batch_size=1,
         )
         bench.add_metric("rsa")
         results = bench.run()
@@ -334,7 +334,7 @@ def run_tier3():
         bench = LeBel2023Benchmark(
             model_identifier="gpt2_small",
             layer_name="transformer.h.11",
-            batch_size=4,
+            batch_size=1,
         )
         bench.add_metric("ridge")
         results = bench.run()
