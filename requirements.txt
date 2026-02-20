@@ -69,7 +69,7 @@ robustbench @ git+https://github.com/RobustBench/robustbench.git
 phys_readouts@ git+https://github.com/thekej/phys_readouts.git#egg=phys_readouts
 avid_cma @ git+https://github.com/YingtianDt/AVID-CMA.git
 gdt_model @ git+https://github.com/YingtianDt/GDT.git
-openstl @ git+https://github.com/YingtianDt/OpenSTL.git
+openstl @ git+https://github.com/thekej/OpenSTL.git
 S3D_HowTo100M @ git+https://github.com/YingtianDt/S3D_HowTo100M
 vonenet @ git+https://github.com/dicarlolab/vonenet.git
 jepa @ git+https://github.com/thekej/jepa.git
