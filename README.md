@@ -20,7 +20,7 @@ python check_system.py --quick
 
 For a detailed check with a specific configuration:
 ```bash
-python check_system.py --model resnet50 --benchmark OnlineTVSDV1 --metric ridge
+python check_system.py --model resnet50 --benchmark TVSDV1 --metric ridge
 ```
 
 ### 2. Install (Recommended: Use the Install Script)
