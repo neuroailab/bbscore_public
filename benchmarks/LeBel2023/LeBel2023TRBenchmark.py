@@ -256,15 +256,16 @@ class LeBel2023TRBenchmark:
 
         results = {
             'per_story_rsa': np.array(story_scores),
-            'mean_rsa_all': (
-                float(np.mean(story_scores))
+            'median_rsa_all': (
+                float(np.median(story_scores))
                 if story_scores else 0.0),
             'n_stories': len(story_scores),
         }
 
         if story_scores_lang:
             results['per_story_rsa_lang'] = np.array(story_scores_lang)
-            results['mean_rsa_lang'] = float(np.mean(story_scores_lang))
+            results['median_rsa_lang'] = float(
+                np.median(story_scores_lang))
 
         return results
 
@@ -395,8 +396,8 @@ class LeBel2023TRBenchmark:
                 'median_r2_all': np.median(
                     fold_scores['r2'], axis=0),
                 'final_pearson_all': float(
-                    np.mean(median_pearson)),
-                'final_r2_all': float(np.mean(
+                    np.median(median_pearson)),
+                'final_r2_all': float(np.median(
                     np.median(fold_scores['r2'], axis=0))),
                 'lang_mask': lang_mask,
                 'n_lang_voxels': int(n_lang_voxels),
@@ -404,14 +405,14 @@ class LeBel2023TRBenchmark:
                     median_pearson[lang_mask]
                     if n_lang_voxels > 0 else np.array([])),
                 'final_pearson_lang': (
-                    float(np.mean(median_pearson[lang_mask]))
+                    float(np.median(median_pearson[lang_mask]))
                     if n_lang_voxels > 0 else 0.0),
                 'median_r2_lang': (
                     np.median(
                         fold_scores['r2'], axis=0)[lang_mask]
                     if n_lang_voxels > 0 else np.array([])),
                 'final_r2_lang': (
-                    float(np.mean(np.median(
+                    float(np.median(np.median(
                         fold_scores['r2'], axis=0)[lang_mask]))
                     if n_lang_voxels > 0 else 0.0),
             }
@@ -458,13 +459,13 @@ class LeBel2023TRBenchmark:
                     median_pearson[lang_mask]
                     if n_lang_voxels > 0 else np.array([]))
                 results[ridge_key]['final_pearson_lang'] = (
-                    float(np.mean(median_pearson[lang_mask]))
+                    float(np.median(median_pearson[lang_mask]))
                     if n_lang_voxels > 0 else 0.0)
                 results[ridge_key]['median_r2_lang'] = (
                     median_r2[lang_mask]
                     if n_lang_voxels > 0 else np.array([]))
                 results[ridge_key]['final_r2_lang'] = (
-                    float(np.mean(median_r2[lang_mask]))
+                    float(np.median(median_r2[lang_mask]))
                     if n_lang_voxels > 0 else 0.0)
 
                 lang_grp = region_scores['per_group'].get(
@@ -472,9 +473,9 @@ class LeBel2023TRBenchmark:
                 print(
                     f"Region scoring: language group "
                     f"Pearson="
-                    f"{lang_grp.get('mean_pearson', 0):.4f}, "
+                    f"{lang_grp.get('median_pearson', 0):.4f}, "
                     f"non-language="
-                    f"{region_scores['per_group'].get('non_language', {}).get('mean_pearson', 0):.4f}")
+                    f"{region_scores['per_group'].get('non_language', {}).get('median_pearson', 0):.4f}")
             except Exception as e:
                 print(f"Warning: Region-based scoring failed: {e}")
 
@@ -485,13 +486,13 @@ class LeBel2023TRBenchmark:
                 all_features, all_fmri, lang_mask=lang_mask)
             results['temporal_rsa'] = rsa_results
             print(f"Temporal RSA - "
-                  f"Mean (all voxels): "
-                  f"{rsa_results['mean_rsa_all']:.4f} "
+                  f"Median (all voxels): "
+                  f"{rsa_results['median_rsa_all']:.4f} "
                   f"({rsa_results['n_stories']} stories)")
-            if 'mean_rsa_lang' in rsa_results:
+            if 'median_rsa_lang' in rsa_results:
                 print(f"Temporal RSA - "
-                      f"Mean (lang voxels): "
-                      f"{rsa_results['mean_rsa_lang']:.4f}")
+                      f"Median (lang voxels): "
+                      f"{rsa_results['median_rsa_lang']:.4f}")
 
             # --- Region-based temporal RSA ---
             try:
@@ -507,9 +508,9 @@ class LeBel2023TRBenchmark:
                     'language', {})
                 print(
                     f"Region RSA: language="
-                    f"{lang_rsa.get('mean_rsa', 0):.4f}, "
+                    f"{lang_rsa.get('median_rsa', 0):.4f}, "
                     f"non-language="
-                    f"{rsa_region_scores['per_group'].get('non_language', {}).get('mean_rsa', 0):.4f}")
+                    f"{rsa_region_scores['per_group'].get('non_language', {}).get('median_rsa', 0):.4f}")
             except Exception as e:
                 print(f"Warning: Region-based RSA failed: {e}")
 

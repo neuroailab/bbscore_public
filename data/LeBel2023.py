@@ -1054,12 +1054,12 @@ class RegionMapper:
 
         def _agg(indices):
             if len(indices) == 0:
-                return {'mean_pearson': 0.0, 'mean_r2': 0.0,
+                return {'median_pearson': 0.0, 'median_r2': 0.0,
                         'n_voxels': 0}
             return {
-                'mean_pearson': float(np.mean(
+                'median_pearson': float(np.median(
                     per_voxel_pearson[indices])),
-                'mean_r2': float(np.mean(per_voxel_r2[indices])),
+                'median_r2': float(np.median(per_voxel_r2[indices])),
                 'n_voxels': int(len(indices)),
             }
 
@@ -1140,8 +1140,8 @@ class RegionMapper:
         for gname in target_groups:
             scores = group_stories[gname]
             per_group[gname] = {
-                'mean_rsa': (float(np.mean(scores))
-                             if scores else 0.0),
+                'median_rsa': (float(np.median(scores))
+                               if scores else 0.0),
                 'n_stories': len(scores),
             }
         return {'per_group': per_group}
