@@ -3,13 +3,21 @@ LeBel2023 TR-level benchmark for audio stimuli.
 
 Noise ceiling
 -------------
-Per-voxel noise ceiling is computed via within-subject split-half
+Two noise ceilings are computed via within-subject split-half
 reliability from repeated presentations of 'wheretheressmoke'
 (see compute_splithalf_ceiling.py):
 
+Per-voxel ceiling (for global metrics):
   1. Split runs into odd/even halves, average each half.
   2. Per-voxel Pearson correlation between the two halves.
   3. Spearman-Brown correction: r_ceiling = 2*r / (1 + r).
+
+Per-TR spatial ceiling (for per-TR metrics):
+  1. Same split-half averaging as above.
+  2. Per-TR spatial correlation between the two halves.
+  3. Spearman-Brown correction.
+  Median across TRs used as normalizing constant (TR positions
+  don't correspond across different stories).
 
 Voxels with ceiling <= 0.15 are excluded. This retains 26-47% of
 whole-brain voxels depending on subject. All scoring operates on
@@ -17,7 +25,7 @@ ceiling-filtered voxels only: ridge regression runs on the subset,
 and spatial masks (whole-brain, language, region groups) are mapped
 into the filtered voxel space before ridge.
 
-The precomputed ceiling is stored in data/lebel2023_ceiling_splithalf.npz.
+The precomputed ceilings are stored in data/lebel2023_ceiling_splithalf.npz.
 """
 import os
 import pickle
@@ -317,9 +325,9 @@ class LeBel2023AudioTRBenchmark:
         assembly = LeBel2023TRAssembly(
             subjects=[self.subject_id]
         )
-        story_fmri, ceiling, ceiling_mask = assembly.get_assembly(
-            story_names=stimulus_set.story_names
-        )
+        story_fmri, ceiling, ceiling_mask, per_tr_ceiling = (
+            assembly.get_assembly(
+                story_names=stimulus_set.story_names))
 
         # 3. Extract features and align with fMRI per story
         all_features = []
@@ -500,6 +508,14 @@ class LeBel2023AudioTRBenchmark:
             per_tr = fold_scores['per_tr_spatial']
             per_tr_groups = fold_scores['per_tr_groups']
 
+            # Per-TR spatial ceiling: median reliability across TRs
+            # of repeated stimulus. Used as a single normalizing
+            # constant since TR positions don't match across stories.
+            tr_ceil = None
+            if per_tr_ceiling is not None:
+                tr_ceil = float(np.median(per_tr_ceiling))
+                results[ridge_key]['per_tr_ceiling'] = tr_ceil
+
             # Build per-story TR traces (Level 4)
             per_story_traces = {}
             per_story_summary = {}
@@ -514,21 +530,30 @@ class LeBel2023AudioTRBenchmark:
                     vals = tr_arr[s_mask]
                     valid = vals[~np.isnan(vals)]
                     story_traces[grp] = vals
-                    story_summary[grp] = (
-                        float(np.median(valid))
-                        if len(valid) > 0 else 0.0)
+                    story_summary[grp] = float(
+                        np.median(valid)) if len(valid) > 0 else 0.0
+                    if tr_ceil is not None:
+                        story_summary[f'{grp}_ceiled'] = (
+                            story_summary[grp] / tr_ceil)
                 per_story_traces[s_name] = story_traces
                 per_story_summary[s_name] = story_summary
 
-            # Level 3: Per-story summary
+            # Level 3: Per-story summary (ceiled + unceiled)
             results[ridge_key]['per_story_spatial'] = per_story_summary
 
-            # Level 4: Per-story TR traces
+            # Level 4: Per-story TR traces (ceiled + unceiled)
+            per_story_traces_out = {}
+            for s_name, traces in per_story_traces.items():
+                entry = {}
+                for grp, vals in traces.items():
+                    entry[grp] = vals
+                    if tr_ceil is not None:
+                        entry[f'{grp}_ceiled'] = vals / tr_ceil
+                per_story_traces_out[s_name] = entry
             results[ridge_key]['per_story_tr_traces'] = (
-                per_story_traces)
+                per_story_traces_out)
 
-            # Level 2: Global TR progression
-            # Align stories by TR position, average across stories
+            # Level 2: Global TR progression (ceiled + unceiled)
             max_trs = max(
                 len(v['whole_brain'])
                 for v in per_story_traces.values())
@@ -545,6 +570,9 @@ class LeBel2023AudioTRBenchmark:
                     if vals_at_t:
                         progression[t] = float(np.median(vals_at_t))
                 global_tr_progression[grp] = progression
+                if tr_ceil is not None:
+                    global_tr_progression[f'{grp}_ceiled'] = (
+                        progression / tr_ceil)
             results[ridge_key]['global_tr_progression'] = (
                 global_tr_progression)
 
@@ -554,9 +582,13 @@ class LeBel2023AudioTRBenchmark:
                     continue
                 valid = per_tr[grp][~np.isnan(per_tr[grp])]
                 if len(valid) > 0:
-                    print(f"Per-TR spatial ({grp}): "
-                          f"median={np.median(valid):.4f}, "
-                          f"mean={np.mean(valid):.4f}")
+                    msg = (f"Per-TR spatial ({grp}): "
+                           f"median={np.median(valid):.4f}, "
+                           f"mean={np.mean(valid):.4f}")
+                    if tr_ceil is not None:
+                        ceiled_med = np.median(valid) / tr_ceil
+                        msg += f", ceiled={ceiled_med:.4f}"
+                    print(msg)
 
             lang_mask = spatial_masks.get('language')
 
@@ -601,6 +633,7 @@ class LeBel2023AudioTRBenchmark:
             "metrics": results,
             "ceiling": ceiling,
             "ceiling_mask": ceiling_mask,
+            "per_tr_ceiling": per_tr_ceiling,
         }
         with open(results_file, 'wb') as f:
             pickle.dump(merged, f)

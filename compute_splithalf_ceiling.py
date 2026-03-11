@@ -139,11 +139,17 @@ def compute_subject_ceiling(data_dir, pycortex_dir, subject, sessions):
     print(f"  Voxels with r_ceiling > 0.5: "
           f"{(r_ceiling > 0.5).sum()} / {n_voxels}", flush=True)
 
-    # Per-TR spatial reliability
-    n_trs = min_trs
-    # Vectorized: correlate spatial patterns at each TR
-    odd_sp = odd_avg - odd_avg.mean(axis=1, keepdims=True)
-    even_sp = even_avg - even_avg.mean(axis=1, keepdims=True)
+    # Per-TR spatial reliability on thresholded voxels only.
+    # This matches the benchmark which evaluates per-TR spatial
+    # correlations on ceiling-filtered voxels.
+    CEILING_THRESHOLD = 0.15
+    thresh_mask = r_ceiling > CEILING_THRESHOLD
+    n_thresh = int(thresh_mask.sum())
+    odd_thresh = odd_avg[:, thresh_mask]   # (t, n_thresh)
+    even_thresh = even_avg[:, thresh_mask]  # (t, n_thresh)
+
+    odd_sp = odd_thresh - odd_thresh.mean(axis=1, keepdims=True)
+    even_sp = even_thresh - even_thresh.mean(axis=1, keepdims=True)
     num_sp = (odd_sp * even_sp).sum(axis=1)
     denom_sp = np.sqrt(
         (odd_sp ** 2).sum(axis=1) * (even_sp ** 2).sum(axis=1))
@@ -155,7 +161,7 @@ def compute_subject_ceiling(data_dir, pycortex_dir, subject, sessions):
         n_correction * per_tr_spatial_r_clipped /
         (1 + (n_correction - 1) * per_tr_spatial_r_clipped))
 
-    print(f"  Per-TR spatial reliability: "
+    print(f"  Per-TR spatial reliability ({n_thresh} thresholded voxels): "
           f"median={np.median(per_tr_spatial_ceiling):.4f}, "
           f"mean={np.mean(per_tr_spatial_ceiling):.4f}", flush=True)
 
