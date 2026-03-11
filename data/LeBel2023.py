@@ -533,7 +533,8 @@ class LeBel2023TRAssembly(BaseDataset):
 
     def get_assembly(
         self, story_names: Optional[List[str]] = None
-    ) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
+    ) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray,
+               Optional[np.ndarray]]:
         """
         Load per-story fMRI time series.
 
@@ -544,6 +545,7 @@ class LeBel2023TRAssembly(BaseDataset):
             story_data: dict mapping story_name -> (n_TRs, n_voxels)
             ceiling: (n_voxels,) per-voxel noise ceiling
             ceiling_mask: (n_voxels,) bool — voxels with reliable ceiling
+            per_tr_ceiling: (n_TRs_ceiling,) per-TR spatial ceiling or None
         """
         # Accumulate per-story data across subjects
         # For multiple subjects: concatenate along voxel axis
@@ -609,18 +611,24 @@ class LeBel2023TRAssembly(BaseDataset):
         # presentations of 'wheretheressmoke'. Per-voxel Pearson
         # correlation between odd/even run halves with Spearman-Brown
         # correction. Voxels with ceiling <= 0.15 are excluded.
-        ceiling, ceiling_mask = self._load_ceiling(n_voxels)
+        ceiling, ceiling_mask, per_tr_ceiling = self._load_ceiling(
+            n_voxels)
 
         total_trs = sum(v.shape[0] for v in story_data.values())
         print(f"Loaded {len(story_data)} stories, "
               f"{total_trs} total TRs, {n_voxels} voxels.")
 
-        return story_data, ceiling, ceiling_mask
+        return story_data, ceiling, ceiling_mask, per_tr_ceiling
 
     def _load_ceiling(self, n_voxels):
-        """Load precomputed per-voxel split-half reliability ceiling.
+        """Load precomputed split-half reliability ceilings.
 
-        Ceiling is computed via split-half correlation of repeated
+        Returns per-voxel ceiling, ceiling mask, and per-TR spatial
+        ceiling. Per-voxel ceiling is used for global metric
+        normalization; per-TR spatial ceiling normalizes per-TR
+        spatial correlations.
+
+        Both are computed via split-half correlation of repeated
         presentations of 'wheretheressmoke' with Spearman-Brown
         correction. Voxels with ceiling <= 0.15 are excluded.
         """
@@ -634,14 +642,16 @@ class LeBel2023TRAssembly(BaseDataset):
             print("Warning: Split-half ceiling file not found, "
                   "using placeholder ceiling=1.0")
             return (np.ones(n_voxels, dtype=np.float32),
-                    np.ones(n_voxels, dtype=bool))
+                    np.ones(n_voxels, dtype=bool),
+                    None)
 
         data = np.load(ceiling_path, allow_pickle=True)
         if subj not in data:
             print(f"Warning: No ceiling for {subj}, "
                   "using placeholder ceiling=1.0")
             return (np.ones(n_voxels, dtype=np.float32),
-                    np.ones(n_voxels, dtype=bool))
+                    np.ones(n_voxels, dtype=bool),
+                    None)
 
         ceiling = data[subj].astype(np.float32)
 
@@ -653,7 +663,22 @@ class LeBel2023TRAssembly(BaseDataset):
               f"({100 * n_kept / len(ceiling):.1f}%)")
 
         ceiling = np.clip(ceiling, 1e-3, None)
-        return ceiling, ceiling_mask
+
+        # Per-TR spatial ceiling (one value per TR of the repeated
+        # story). Used to normalize per-TR spatial correlations.
+        per_tr_key = f'{subj}_per_tr_spatial'
+        per_tr_ceiling = None
+        if per_tr_key in data:
+            per_tr_ceiling = data[per_tr_key].astype(np.float32)
+            per_tr_ceiling = np.clip(per_tr_ceiling, 1e-3, None)
+            print(f"Per-TR spatial ceiling for {subj}: "
+                  f"median={np.median(per_tr_ceiling):.4f}, "
+                  f"{len(per_tr_ceiling)} TRs")
+        else:
+            print("Warning: Per-TR spatial ceiling not found. "
+                  "Regenerate with compute_splithalf_ceiling.py")
+
+        return ceiling, ceiling_mask, per_tr_ceiling
 
     def __len__(self):
         return 27
