@@ -46,6 +46,7 @@ MODEL_MODULES = [
     "scaling_models",
     "selavi",
     "simvp",
+    "ssast",
     "swin",
     "tau",
     "torch_video",
