@@ -145,7 +145,10 @@ class DualNeuron:
         Turns out they do all the work for you inside dualneuron
         """
         
-        stim_by_neuron = np.array(get_spatial_activation(torch.Tensor(features_np)))
+        if len(features_np.shape) == 5: # some layers have a trivial dim=1 dimension
+            stim_by_neuron = np.array(get_spatial_activation(torch.Tensor(features_np.mean(dim=1))))
+        else:
+            stim_by_neuron = np.array(get_spatial_activation(torch.Tensor(features_np)))
         
         if standardize and stim_by_neuron.shape[0] > 1: # can't standardize if just 1 stimulus
             return (stim_by_neuron - stim_by_neuron.mean(axis=0)) / stim_by_neuron.std(axis=0)
