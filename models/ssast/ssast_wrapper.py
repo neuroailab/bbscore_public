@@ -20,7 +20,7 @@ class SSASTModel(nn.Module):
 
     _CONFIGS = {
         'ssast_patch': {
-            'url': 'https://www.dropbox.com/s/iy1lld518p42sn7/SSAST-Base-Patch-400.pth?dl=1',
+            'url': 'https://www.dropbox.com/scl/fi/0q6hzz06qcjx0il370k83/SSAST-Base-Patch-400.pth?rlkey=0jxlz3zh9ryk9zc68zr2jmml9&dl=1',
             'checkpoint_name': 'SSAST-Base-Patch-400.pth',
             'fshape': 16, 'tshape': 16,
             'fstride': 16, 'tstride': 16,
@@ -28,7 +28,7 @@ class SSASTModel(nn.Module):
             'model_size': 'base',
         },
         'ssast_frame': {
-            'url': 'https://www.dropbox.com/s/nx6nx4w10yl01d2/SSAST-Base-Frame-400.pth?dl=1',
+            'url': 'https://www.dropbox.com/scl/fi/ls5b3v6r4182fbrlld9t2/SSAST-Base-Frame-400.pth?rlkey=jaeuyuxq2qetizh7ybr8rrhli&dl=1',
             'checkpoint_name': 'SSAST-Base-Frame-400.pth',
             'fshape': 128, 'tshape': 2,
             'fstride': 128, 'tstride': 2,
