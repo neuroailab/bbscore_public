@@ -44,6 +44,10 @@ class SSASTModel(nn.Module):
             print(f'[SSAST] Unknown identifier "{model_identifier}". Defaulting to ssast_patch.')
             config = self._CONFIGS['ssast_patch']
 
+        # Store expected input dimensions for forward pass padding.
+        self.input_fdim = config['input_fdim']
+        self.input_tdim = config['input_tdim']
+
         # ASTModel(pretrain_stage=False) requires a valid checkpoint path at
         # construction time — download first, then pass the path.
         cached_file = self._get_checkpoint(config['url'], config['checkpoint_name'])
@@ -82,6 +86,16 @@ class SSASTModel(nn.Module):
         # Handle both (T, F) and (B, T, F) inputs by adding batch dim if needed.
         if x.dim() == 2:
             x = x.unsqueeze(0)  # (T, F) → (1, T, F)
+        
+        # Pad time dimension to self.input_tdim (1024 for both patch and frame models).
+        # Shape is now (B, T, 128); we need to pad T to input_tdim.
+        B, T, F = x.shape
+        if T < self.input_tdim:
+            pad_amount = self.input_tdim - T
+            x = torch.nn.functional.pad(x, (0, 0, 0, pad_amount))  # pad on time dim
+        elif T > self.input_tdim:
+            x = x[:, :self.input_tdim, :]  # truncate if too long
+        
         return self.ast(x)
 
 
