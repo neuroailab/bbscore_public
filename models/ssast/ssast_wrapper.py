@@ -74,12 +74,14 @@ class SSASTModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: (B, T, F) normalized log-mel spectrogram, float32.
-               preprocess_fn must convert raw waveforms before this is called.
+            x: (T, F) or (B, T, F) normalized log-mel spectrogram, float32.
+               preprocess_fn returns (T, F); framework may or may not add batch dim.
         Returns:
-            (B, D) token-averaged features.
+            (B, D) or (D,) token-averaged features (depends on input dimensionality).
         """
-        # ASTModel.forward handles unsqueeze(1) + transpose(2, 3) → (B, 1, F, T)
+        # Handle both (T, F) and (B, T, F) inputs by adding batch dim if needed.
+        if x.dim() == 2:
+            x = x.unsqueeze(0)  # (T, F) → (1, T, F)
         return self.ast(x)
 
 
