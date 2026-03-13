@@ -960,6 +960,7 @@ REGION_GROUPS = {
     'auditory': ['transversetemporal', 'superiortemporal'],
     'brocas': ['parsopercularis', 'parstriangularis'],
     'wernickes': ['superiortemporal', 'middletemporal', 'supramarginal'],
+    'heschls': ['transversetemporal'],
 }
 
 EXPECTED_CORTEX_VERTICES = 81126

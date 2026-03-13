@@ -77,6 +77,7 @@ class LeBel2023AudioTRBenchmark:
         lang_mask_threshold: float = 0.05,
         batch_size: Union[int, List[int]] = None,
         debug: bool = False,
+        rsa_region: Optional[str] = None,
     ):
         if batch_size is None:
             batch_size = [4]
@@ -86,6 +87,7 @@ class LeBel2023AudioTRBenchmark:
         self.hrf_delay = hrf_delay
         self.n_cv_folds = n_cv_folds
         self.lang_mask_threshold = lang_mask_threshold
+        self.rsa_region = rsa_region
         self.model_identifier = model_identifier
 
         if isinstance(batch_size, list):
@@ -390,29 +392,26 @@ class LeBel2023AudioTRBenchmark:
         results = {}
         lang_mask = None
         region_mapper = None
+        rsa_mask = None
 
         # --- Pre-ridge: ceiling filter + region masks ---
         cm = ceiling_mask
         n_cm = int(cm.sum())
         ceiling_filtered = ceiling[cm]
         
-        # 5. Ridge regression
-        if run_ridge:
-            X = np.concatenate(all_features, axis=0)
+        # Build region masks if we need them (ridge or RSA)
+        if run_ridge or run_temporal_rsa:  # <-- Changed condition
+            n_voxels_full = None
+            # we need the full voxel count to map region indices into the
+            # ceiling-filtered space; only available once y_full exists
             y_full = np.concatenate(all_fmri, axis=0)
-            groups = np.array(all_story_labels)
             n_voxels_full = y_full.shape[1]
 
-            # Subset fMRI to ceiling-filtered voxels only
-            y = y_full[:, cm]
-
-            # Load region mapper for anatomical masks
-            region_mapper = None
             spatial_masks = {'whole_brain': np.ones(n_cm, dtype=bool)}
             region_groups = [
                 'language', 'non_language', 'temporal', 'frontal',
                 'parietal', 'occipital', 'auditory', 'wernickes',
-                'brocas',
+                'brocas', 'heschls',
             ]
             try:
                 fs_labels = LeBel2023FreeSurferLabels()
@@ -439,12 +438,11 @@ class LeBel2023AudioTRBenchmark:
             except Exception as e:
                 print(f"Warning: Region masks failed: {e}")
 
-            print(f"Total TRs: {X.shape[0]}, "
-                  f"Feature dim: {X.shape[1]}, "
-                  f"Voxels: {n_cm} (filtered from {n_voxels_full})")
-            for grp, mask in spatial_masks.items():
-                if grp != 'whole_brain':
-                    print(f"  {grp}: {int(mask.sum())} voxels")
+            rsa_mask = None
+            if self.rsa_region is not None:
+                rsa_mask = spatial_masks.get(self.rsa_region)
+
+            lang_mask = spatial_masks.get('language')  # <-- Moved here
 
             # --- Run ridge with all spatial masks ---
             fold_scores = self._run_group_kfold(
@@ -590,8 +588,6 @@ class LeBel2023AudioTRBenchmark:
                         msg += f", ceiled={ceiled_med:.4f}"
                     print(msg)
 
-            lang_mask = spatial_masks.get('language')
-
         # 6. Within-story temporal RSA
         if run_temporal_rsa:
             # Filter fMRI to ceiling voxels for RSA too
@@ -599,7 +595,13 @@ class LeBel2023AudioTRBenchmark:
             print("Computing within-story temporal RSA...")
             rsa_results = self._compute_temporal_rsa(
                 all_features, all_fmri_filtered,
-                lang_mask=lang_mask)
+                lang_mask=rsa_mask or lang_mask)   # <-- use rsa_mask if set
+            if self.rsa_region is not None and 'median_rsa_lang' in rsa_results:
+                rsa_results[f'median_rsa_{self.rsa_region}'] = (
+                    rsa_results.pop('median_rsa_lang'))
+                rsa_results[f'per_story_rsa_{self.rsa_region}'] = (
+                    rsa_results.pop('per_story_rsa_lang'))
+
             results['temporal_rsa'] = rsa_results
             print(f"Temporal RSA - "
                   f"Median (all voxels): "
