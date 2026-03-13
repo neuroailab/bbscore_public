@@ -204,6 +204,12 @@ if __name__ == "__main__":
         choices=["none", "concatenate", "stack"],
         help="How to combine layers: 'none' (separate), 'concatenate' (feature concat), 'stack' (new dim).",
     )
+    parser.add_argument(
+        "--rsa-region",
+        type=str,
+        default=None,
+        help="Region for RSA (e.g., heschls). Only applies to temporal_rsa metric."
+    )
 
     args = parser.parse_args()
 
@@ -214,6 +220,11 @@ if __name__ == "__main__":
             layers = layers[0].split()
 
     # --- Execute the Pipeline ---
+    benchmark_kwargs = {
+        'model_identifier': args.model,
+        'layer_name': args.layer,
+        'rsa_region': args.rsa_region,
+    }
     test_pipeline(
         model_identifier=args.model,
         layer_name=layers,
