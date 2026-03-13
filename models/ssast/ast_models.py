@@ -12,6 +12,10 @@ from torch.cuda.amp import autocast
 import os
 import timm
 from timm.models.layers import to_2tuple, trunc_normal_
+try:
+    from timm.layers import patch_embed as timm_patch_embed
+except ImportError:  # older timm versions
+    timm_patch_embed = None
 import numpy as np
 
 # Override the timm package to relax the input shape constraint.
@@ -53,6 +57,8 @@ class ASTModel(nn.Module):
         
         # Override timm input shape restriction
         timm.models.vision_transformer.PatchEmbed = PatchEmbed
+        if timm_patch_embed is not None and hasattr(timm_patch_embed, 'PatchEmbed'):
+            timm_patch_embed.PatchEmbed = PatchEmbed
 
         # Pretrain the AST models
         if pretrain_stage == True:
