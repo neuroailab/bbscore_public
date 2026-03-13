@@ -200,6 +200,11 @@ class ASTModel(nn.Module):
             self.input_fdim = input_fdim
             self.input_tdim = input_tdim
 
+            # Ensure timm patch embedding metadata matches the new spectrogram shape
+            self.v.patch_embed.img_size = (input_fdim, input_tdim)
+            self.v.patch_embed.patch_size = (fshape, tshape)
+            self.v.patch_embed.grid_size = (f_dim, t_dim)
+
 
     def get_shape(self, fstride, tstride, input_fdim, input_tdim, fshape, tshape):
         test_input = torch.randn(1, 1, input_fdim, input_tdim)
