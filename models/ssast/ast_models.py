@@ -115,7 +115,7 @@ class ASTModel(nn.Module):
             if load_pretrained_mdl_path == None:
                 raise ValueError('Please set load_pretrained_mdl_path to load a pretrained models.')
             
-            sd = torch.load(load_pretrained_mdl_path, map_location=device)
+            sd = torch.load(load_pretrained_mdl_path, map_location=device, weights_only=False)
             try:
                 p_fshape, p_tshape = sd['module.v.patch_embed.proj.weight'].shape[2], sd['module.v.patch_embed.proj.weight'].shape[3]
                 p_input_fdim, p_input_tdim = sd['module.p_input_fdim'].item(), sd['module.p_input_tdim'].item()
