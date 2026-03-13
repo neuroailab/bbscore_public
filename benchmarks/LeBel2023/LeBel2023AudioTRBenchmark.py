@@ -391,17 +391,17 @@ class LeBel2023AudioTRBenchmark:
         lang_mask = None
         region_mapper = None
 
+        # --- Pre-ridge: ceiling filter + region masks ---
+        cm = ceiling_mask
+        n_cm = int(cm.sum())
+        ceiling_filtered = ceiling[cm]
+        
         # 5. Ridge regression
         if run_ridge:
             X = np.concatenate(all_features, axis=0)
             y_full = np.concatenate(all_fmri, axis=0)
             groups = np.array(all_story_labels)
             n_voxels_full = y_full.shape[1]
-
-            # --- Pre-ridge: ceiling filter + region masks ---
-            cm = ceiling_mask
-            n_cm = int(cm.sum())
-            ceiling_filtered = ceiling[cm]
 
             # Subset fMRI to ceiling-filtered voxels only
             y = y_full[:, cm]
