@@ -62,19 +62,19 @@ class ASTModel(nn.Module):
                 raise ValueError('fstride != fshape or tstride != tshape, they must be same at the pretraining stage')
 
             if model_size == 'tiny':
-                self.v = timm.create_model('vit_deit_tiny_distilled_patch16_224', pretrained=False)
+                self.v = timm.create_model('deit_tiny_distilled_patch16_224', pretrained=False)
                 self.heads, self.depth = 3, 12
                 self.cls_token_num = 2
             elif model_size == 'small':
-                self.v = timm.create_model('vit_deit_small_distilled_patch16_224', pretrained=False)
+                self.v = timm.create_model('deit_small_distilled_patch16_224', pretrained=False)
                 self.heads, self.depth = 6, 12
                 self.cls_token_num = 2
             elif model_size == 'base':
-                self.v = timm.create_model('vit_deit_base_distilled_patch16_384', pretrained=False)
+                self.v = timm.create_model('deit_base_distilled_patch16_384', pretrained=False)
                 self.heads, self.depth = 12, 12
                 self.cls_token_num = 2
             elif model_size == 'base_nokd':
-                self.v = timm.create_model('vit_deit_base_patch16_384', pretrained=False)
+                self.v = timm.create_model('deit_base_patch16_384', pretrained=False)
                 self.heads, self.depth = 12, 12
                 self.cls_token_num = 1
             else:
