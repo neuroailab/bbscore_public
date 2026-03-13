@@ -17,7 +17,8 @@ def test_pipeline(
     debug: bool,
     use_ridge_smart_memory: bool,
     random_projection: str,
-    aggregation_mode: str
+    aggregation_mode: str,
+    rsa_region: str = None
 ):
     """
     Tests the benchmark pipeline with a given model, layer(s), and benchmark.
@@ -100,6 +101,11 @@ def test_pipeline(
         print(
             f"Warning: Benchmark '{benchmark_identifier}' does not support Random Projection. Ignoring.")
 
+    if rsa_region and hasattr(pipeline, 'rsa_region'):
+        pipeline.rsa_region = rsa_region
+        print(f"RSA region set to: {rsa_region}")
+    elif rsa_region:
+        print(f"Warning: Benchmark '{benchmark_identifier}' does not support rsa_region. Ignoring.")
     # 6. Add Desired Metrics (with compatibility check)
     for metric_name in metric_names:
         if not validate_metric_benchmark(metric_name, benchmark_identifier):
@@ -234,5 +240,6 @@ if __name__ == "__main__":
         debug=args.debug,
         use_ridge_smart_memory=args.use_ridge_smart_memory,
         random_projection=args.random_projection,
-        aggregation_mode=args.aggregation_mode
+        aggregation_mode=args.aggregation_mode,
+        rsa_region=args.rsa_region
     )
