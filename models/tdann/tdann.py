@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import torch
@@ -48,7 +47,7 @@ class TDANN(ResNet):
         return super().preprocess_fn(input_data)
 
     def _load_model_from_checkpoint(self, checkpoint_path: str):
-        """From https://github.com/neuroailab/TDANN/blob/main/demo/src/model.py"""
+        """With help from https://github.com/neuroailab/TDANN/"""
         model = torchvision.models.resnet18(weights=None)
 
         # drop the FC layer
@@ -74,14 +73,13 @@ class TDANN(ResNet):
 
     def get_model(self, identifier):
         """
-        Loads a ResNet model or its vision encoder.
+        Loads a TDANN model.
 
         Args:
-            identifier (str): Identifier for the ResNet variant.
-            vision_only (bool): Return only the vision encoder if True.
+            identifier (str): Identifier for the variant.
 
         Returns:
-            model: The loaded ResNet model or vision encoder.
+            model: The loaded model.
 
         Raises:
             ValueError: If the identifier is unknown.
