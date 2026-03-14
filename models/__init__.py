@@ -48,6 +48,7 @@ MODEL_MODULES = [
     "simvp",
     "swin",
     "tau",
+    "tdann",
     "torch_video",
     "timesformer",
     "vgg",
