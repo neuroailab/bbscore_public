@@ -11,11 +11,9 @@ from transformers import AutoImageProcessor
 from models.resnet import ResNet
 
 class TDANN(ResNet):
-    """All models are based off the ResNet-18 architecture. Note that the
-    filters are in a sense shuffled and if trying to display the learned topology,
-    it'd be necessary to rearrange them according to positions files which map
-    weights to coordinates on a cortical grid. But mathematically, convolution is
-    permutation invariant so internal representations should still be the same"""
+    """All models are based off the ResNet-18 architecture. Note that the tdann was trained
+    so that each weight was assigned to a coordinate on a cortical sheet which affected its 
+    spatial loss term. Ie, the learned weights inherently reflect the forced topology"""
 
     def __init__(self):
         """Initializes the TDANN loader."""
