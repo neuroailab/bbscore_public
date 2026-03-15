@@ -731,8 +731,14 @@ class LeBel2023AudioStimulusSet(BaseDataset):
             except Exception as e:
                 print(f"Error downloading audio stimuli: {e}")
 
+        # Non-story WAV files that should be excluded (e.g. functional localizers)
+        _NON_STORY_FILES = {"auditory_localizer"}
+
         wav_files = sorted(
             glob.glob(os.path.join(self.stimuli_dir, "*.wav")))
+        # Filter out non-story files to align with assembly HF5 story count
+        wav_files = [f for f in wav_files
+                     if os.path.basename(f).replace(".wav", "") not in _NON_STORY_FILES]
         print(f"Found {len(wav_files)} audio stimulus files.")
         if not wav_files:
             raise FileNotFoundError(
@@ -804,8 +810,14 @@ class LeBel2023AudioTRStimulusSet(BaseDataset):
             except Exception as e:
                 print(f"Error downloading audio stimuli: {e}")
 
+        # Non-story WAV files that should be excluded (e.g. functional localizers)
+        _NON_STORY_FILES = {"auditory_localizer"}
+
         wav_files = sorted(
             glob.glob(os.path.join(self.stimuli_dir, "*.wav")))
+        # Filter out non-story files to align with assembly HF5 story count
+        wav_files = [f for f in wav_files
+                     if os.path.basename(f).replace(".wav", "") not in _NON_STORY_FILES]
         print(f"Found {len(wav_files)} audio stimulus files.")
         if not wav_files:
             raise FileNotFoundError(
