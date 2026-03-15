@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=resnet_50
+#SBATCH --job-name=vit_large
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=2-00:00:00
-#SBATCH --output=/scratch/users/lianeozo/logs/bbscore_%j.out
-#SBATCH --error=/scratch/users/lianeozo/logs/bbscore_%j.err
+#SBATCH --output=/scratch/users/lianeozo/logs/bbscore_vit_%j.out
+#SBATCH --error=/scratch/users/lianeozo/logs/bbscore_vit_%j.err
 
 # ── Environment ──────────────────────────────────────────────────────────────
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -16,7 +16,6 @@ export SCIKIT_LEARN_DATA=/scratch/users/lianeozo/bbscore_data
 
 cd ~/bbscore_public
 
-# Create log directory if it doesn't exist
 mkdir -p /scratch/users/lianeozo/logs
 
 RESULTS_DIR=/scratch/users/lianeozo/bbscore_data/results
@@ -28,11 +27,9 @@ run_experiment() {
     local benchmark=$3
     local metric=$4
 
-    # Build expected results filename — matches BBScore naming convention
     local safe_layer=$(echo "$layer" | tr '/' '_')
     local result_file="${RESULTS_DIR}/${model}_${safe_layer}_${benchmark}.pkl"
 
-    # Skip if result already exists
     if [ -f "$result_file" ]; then
         echo "SKIPPING (already done): $model | $layer | $benchmark | $metric"
         return
@@ -49,7 +46,7 @@ run_experiment() {
         --layer "$layer" \
         --benchmark "$benchmark" \
         --metric "$metric" \
-        --batch-size 32
+        --batch-size 4
 
     if [ $? -eq 0 ]; then
         echo "SUCCESS: $model | $layer | $benchmark | $metric"
@@ -61,17 +58,33 @@ run_experiment() {
     echo ""
 }
 
-# ── Define layer lists ────────────────────────────────────────────────────────
+# ── Layer and benchmark lists ─────────────────────────────────────────────────
 
-RESNET50_LAYERS=(
-    "layer1"
-    "layer2"
-    "layer3"
-    "layer4"
-    "layer1.0.conv1"
-    "layer3.0.conv1"
-    "layer3.5.bn3"
-    "layer4.2.bn3"
+VIT_LARGE_LAYERS=(
+    "_orig_mod.vit.encoder.layer.0"
+    "_orig_mod.vit.encoder.layer.1"
+    "_orig_mod.vit.encoder.layer.2"
+    "_orig_mod.vit.encoder.layer.3"
+    "_orig_mod.vit.encoder.layer.4"
+    "_orig_mod.vit.encoder.layer.5"
+    "_orig_mod.vit.encoder.layer.6"
+    "_orig_mod.vit.encoder.layer.7"
+    "_orig_mod.vit.encoder.layer.8"
+    "_orig_mod.vit.encoder.layer.9"
+    "_orig_mod.vit.encoder.layer.10"
+    "_orig_mod.vit.encoder.layer.11"
+    "_orig_mod.vit.encoder.layer.12"
+    "_orig_mod.vit.encoder.layer.13"
+    "_orig_mod.vit.encoder.layer.14"
+    "_orig_mod.vit.encoder.layer.15"
+    "_orig_mod.vit.encoder.layer.16"
+    "_orig_mod.vit.encoder.layer.17"
+    "_orig_mod.vit.encoder.layer.18"
+    "_orig_mod.vit.encoder.layer.19"
+    "_orig_mod.vit.encoder.layer.20"
+    "_orig_mod.vit.encoder.layer.21"
+    "_orig_mod.vit.encoder.layer.22"
+    "_orig_mod.vit.encoder.layer.23"
 )
 
 BENCHMARKS=(
@@ -80,19 +93,17 @@ BENCHMARKS=(
     "TVSDIT10msBins"
 )
 
-METRIC="temporal_rsa"
-
-# ── ResNet-50 runs ────────────────────────────────────────────────────────────
+# ── ViT-Large runs ────────────────────────────────────────────────────────────
 echo "########################################################"
-echo "Starting ResNet-50 runs"
+echo "Starting ViT-Large runs"
 echo "########################################################"
 
-for layer in "${RESNET50_LAYERS[@]}"; do
+for layer in "${VIT_LARGE_LAYERS[@]}"; do
     for benchmark in "${BENCHMARKS[@]}"; do
-        run_experiment "resnet50_imagenet_full" "$layer" "$benchmark" "$METRIC"
+        run_experiment "vit_large" "$layer" "$benchmark" "temporal_rsa"
     done
 done
 
 echo "########################################################"
-echo "All runs complete: $(date)"
+echo "All ViT-Large runs complete: $(date)"
 echo "########################################################"

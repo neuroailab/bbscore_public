@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=resnet_50
+#SBATCH --job-name=resnet_18
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=2-00:00:00
 #SBATCH --output=/scratch/users/lianeozo/logs/bbscore_%j.out
@@ -63,15 +63,15 @@ run_experiment() {
 
 # ── Define layer lists ────────────────────────────────────────────────────────
 
-RESNET50_LAYERS=(
-    "layer1"
-    "layer2"
-    "layer3"
-    "layer4"
-    "layer1.0.conv1"
-    "layer3.0.conv1"
-    "layer3.5.bn3"
-    "layer4.2.bn3"
+RESNET18_LAYERS=(
+        "layer1.0.bn1"
+        "layer3.0.conv2"
+        "layer2.0.bn2"
+        "layer4.0.bn1"
+        "layer1"
+        "layer2"
+        "layer3"
+        "layer4"
 )
 
 BENCHMARKS=(
@@ -82,14 +82,14 @@ BENCHMARKS=(
 
 METRIC="temporal_rsa"
 
-# ── ResNet-50 runs ────────────────────────────────────────────────────────────
+# ── ResNet-18 runs ────────────────────────────────────────────────────────────
 echo "########################################################"
-echo "Starting ResNet-50 runs"
+echo "Starting ResNet-18 runs"
 echo "########################################################"
 
-for layer in "${RESNET50_LAYERS[@]}"; do
+for layer in "${RESNET18_LAYERS[@]}"; do
     for benchmark in "${BENCHMARKS[@]}"; do
-        run_experiment "resnet50_imagenet_full" "$layer" "$benchmark" "$METRIC"
+        run_experiment "resnet18_imagenet_full" "$layer" "$benchmark" "$METRIC"
     done
 done
 

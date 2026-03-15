@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=resnet_50
+#SBATCH --job-name=deit_base
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
@@ -8,7 +8,6 @@
 #SBATCH --output=/scratch/users/lianeozo/logs/bbscore_%j.out
 #SBATCH --error=/scratch/users/lianeozo/logs/bbscore_%j.err
 
-# ── Environment ──────────────────────────────────────────────────────────────
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate bbscore
 
@@ -16,23 +15,19 @@ export SCIKIT_LEARN_DATA=/scratch/users/lianeozo/bbscore_data
 
 cd ~/bbscore_public
 
-# Create log directory if it doesn't exist
 mkdir -p /scratch/users/lianeozo/logs
 
 RESULTS_DIR=/scratch/users/lianeozo/bbscore_data/results
 
-# ── Helper function ───────────────────────────────────────────────────────────
 run_experiment() {
     local model=$1
     local layer=$2
     local benchmark=$3
     local metric=$4
 
-    # Build expected results filename — matches BBScore naming convention
     local safe_layer=$(echo "$layer" | tr '/' '_')
     local result_file="${RESULTS_DIR}/${model}_${safe_layer}_${benchmark}.pkl"
 
-    # Skip if result already exists
     if [ -f "$result_file" ]; then
         echo "SKIPPING (already done): $model | $layer | $benchmark | $metric"
         return
@@ -61,17 +56,19 @@ run_experiment() {
     echo ""
 }
 
-# ── Define layer lists ────────────────────────────────────────────────────────
-
-RESNET50_LAYERS=(
-    "layer1"
-    "layer2"
-    "layer3"
-    "layer4"
-    "layer1.0.conv1"
-    "layer3.0.conv1"
-    "layer3.5.bn3"
-    "layer4.2.bn3"
+DEIT_BASE_LAYERS=(
+    "blocks.0"
+    "blocks.1"
+    "blocks.2"
+    "blocks.3"
+    "blocks.4"
+    "blocks.5"
+    "blocks.6"
+    "blocks.7"
+    "blocks.8"
+    "blocks.9"
+    "blocks.10"
+    "blocks.11"
 )
 
 BENCHMARKS=(
@@ -80,19 +77,16 @@ BENCHMARKS=(
     "TVSDIT10msBins"
 )
 
-METRIC="temporal_rsa"
-
-# ── ResNet-50 runs ────────────────────────────────────────────────────────────
 echo "########################################################"
-echo "Starting ResNet-50 runs"
+echo "Starting DeiT-Base runs"
 echo "########################################################"
 
-for layer in "${RESNET50_LAYERS[@]}"; do
+for layer in "${DEIT_BASE_LAYERS[@]}"; do
     for benchmark in "${BENCHMARKS[@]}"; do
-        run_experiment "resnet50_imagenet_full" "$layer" "$benchmark" "$METRIC"
+        run_experiment "deit_base_imagenet_full_seed-0" "$layer" "$benchmark" "temporal_rsa"
     done
 done
 
 echo "########################################################"
-echo "All runs complete: $(date)"
+echo "All DeiT-Base runs complete: $(date)"
 echo "########################################################"
