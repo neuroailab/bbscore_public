@@ -18,7 +18,9 @@ def test_pipeline(
     use_ridge_smart_memory: bool,
     random_projection: str,
     aggregation_mode: str,
-    rsa_region: str = None
+    rsa_region: str = None,
+    region_only: str = None,
+    a1_only: bool = False,
 ):
     """
     Tests the benchmark pipeline with a given model, layer(s), and benchmark.
@@ -101,11 +103,27 @@ def test_pipeline(
         print(
             f"Warning: Benchmark '{benchmark_identifier}' does not support Random Projection. Ignoring.")
 
+    if a1_only:
+        if rsa_region is None:
+            rsa_region = 'heschls'
+        if region_only is None:
+            region_only = 'heschls'
+
     if rsa_region and hasattr(pipeline, 'rsa_region'):
         pipeline.rsa_region = rsa_region
         print(f"RSA region set to: {rsa_region}")
     elif rsa_region:
         print(f"Warning: Benchmark '{benchmark_identifier}' does not support rsa_region. Ignoring.")
+
+    if region_only:
+        if hasattr(pipeline, 'analysis_region'):
+            pipeline.analysis_region = region_only
+        if hasattr(pipeline, 'region_only'):
+            pipeline.region_only = True
+        if hasattr(pipeline, 'rsa_region') and pipeline.rsa_region is None:
+            pipeline.rsa_region = region_only
+        print(f"Region-only mode enabled for: {region_only}")
+
     # 6. Add Desired Metrics (with compatibility check)
     for metric_name in metric_names:
         if not validate_metric_benchmark(metric_name, benchmark_identifier):
@@ -216,6 +234,20 @@ if __name__ == "__main__":
         default=None,
         help="Region for RSA (e.g., heschls). Only applies to temporal_rsa metric."
     )
+    parser.add_argument(
+        "--region-only",
+        type=str,
+        default=None,
+        help=(
+            "Restrict analysis to a single region group (e.g., heschls, language). "
+            "For LeBel2023AudioTR benchmarks, this limits ridge and RSA to that region."
+        ),
+    )
+    parser.add_argument(
+        "--a1-only",
+        action="store_true",
+        help="Shortcut for --region-only heschls (A1 / Heschl's gyrus).",
+    )
 
     args = parser.parse_args()
 
@@ -241,5 +273,7 @@ if __name__ == "__main__":
         use_ridge_smart_memory=args.use_ridge_smart_memory,
         random_projection=args.random_projection,
         aggregation_mode=args.aggregation_mode,
-        rsa_region=args.rsa_region
+        rsa_region=args.rsa_region,
+        region_only=args.region_only,
+        a1_only=args.a1_only,
     )

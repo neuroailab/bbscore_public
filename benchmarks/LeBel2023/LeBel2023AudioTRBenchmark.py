@@ -78,6 +78,9 @@ class LeBel2023AudioTRBenchmark:
         batch_size: Union[int, List[int]] = None,
         debug: bool = False,
         rsa_region: Optional[str] = None,
+        analysis_region: Optional[str] = None,
+        region_only: bool = False,
+        a1_only: bool = False,
     ):
         if batch_size is None:
             batch_size = [4]
@@ -87,7 +90,15 @@ class LeBel2023AudioTRBenchmark:
         self.hrf_delay = hrf_delay
         self.n_cv_folds = n_cv_folds
         self.lang_mask_threshold = lang_mask_threshold
-        self.rsa_region = rsa_region
+        self.rsa_region = self._canonicalize_region_name(rsa_region)
+        self.analysis_region = self._canonicalize_region_name(
+            analysis_region)
+        self.region_only = bool(region_only or a1_only)
+        if a1_only and self.analysis_region is None:
+            self.analysis_region = 'heschls'
+        if self.region_only and self.analysis_region is None:
+            # Region-only mode defaults to A1/Heschl's gyrus.
+            self.analysis_region = 'heschls'
         self.model_identifier = model_identifier
 
         if isinstance(batch_size, list):
@@ -121,6 +132,24 @@ class LeBel2023AudioTRBenchmark:
         results_base = os.environ.get('RESULTS_PATH', data_home)
         self.results_dir = os.path.join(results_base, 'results')
         os.makedirs(self.results_dir, exist_ok=True)
+
+    @staticmethod
+    def _canonicalize_region_name(region_name: Optional[str]) -> Optional[str]:
+        """Normalize aliases (e.g., A1/Heschl) to RegionMapper group names."""
+        if region_name is None:
+            return None
+        key = str(region_name).strip().lower().replace("'", "")
+        key = key.replace('-', '').replace('_', '').replace(' ', '')
+        aliases = {
+            'a1': 'heschls',
+            'heschl': 'heschls',
+            'heschls': 'heschls',
+            'heschlsgyrus': 'heschls',
+            'transversetemporal': 'heschls',
+            'broca': 'brocas',
+            'wernicke': 'wernickes',
+        }
+        return aliases.get(key, key)
 
     def _register_hooks(self):
         """Register forward hooks on target layers."""
@@ -391,27 +420,32 @@ class LeBel2023AudioTRBenchmark:
 
         results = {}
         lang_mask = None
-        region_mapper = None
         rsa_mask = None
+        active_region = self._canonicalize_region_name(
+            self.analysis_region or self.rsa_region)
 
         # --- Pre-ridge: ceiling filter + region masks ---
         cm = ceiling_mask
         n_cm = int(cm.sum())
         ceiling_filtered = ceiling[cm]
+
+        # Concatenate once for both ridge and region-mask construction.
+        X = np.concatenate(all_features, axis=0)
+        y_full = np.concatenate(all_fmri, axis=0)
+        y = y_full[:, cm]
+        groups = np.array(all_story_labels)
         
         # Build region masks if we need them (ridge or RSA)
-        if run_ridge or run_temporal_rsa:  # <-- Changed condition
-            n_voxels_full = None
+        spatial_masks = {'whole_brain': np.ones(n_cm, dtype=bool)}
+        if run_ridge or run_temporal_rsa:
             # we need the full voxel count to map region indices into the
             # ceiling-filtered space; only available once y_full exists
-            y_full = np.concatenate(all_fmri, axis=0)
             n_voxels_full = y_full.shape[1]
 
-            spatial_masks = {'whole_brain': np.ones(n_cm, dtype=bool)}
             region_groups = [
                 'language', 'non_language', 'temporal', 'frontal',
                 'parietal', 'occipital', 'auditory', 'wernickes',
-                'brocas', 'heschls',
+                'brocas', 'heschls', 
             ]
             try:
                 fs_labels = LeBel2023FreeSurferLabels()
@@ -438,15 +472,41 @@ class LeBel2023AudioTRBenchmark:
             except Exception as e:
                 print(f"Warning: Region masks failed: {e}")
 
-            rsa_mask = None
-            if self.rsa_region is not None:
-                rsa_mask = spatial_masks.get(self.rsa_region)
+            if active_region is not None:
+                rsa_mask = spatial_masks.get(active_region)
+                if rsa_mask is None:
+                    print(f"Warning: Region '{active_region}' not found in "
+                          "available masks. Falling back to defaults.")
+                elif int(rsa_mask.sum()) == 0:
+                    print(f"Warning: Region '{active_region}' has 0 ceiling "
+                          "voxels. Falling back to defaults.")
+                    rsa_mask = None
 
-            lang_mask = spatial_masks.get('language')  # <-- Moved here
+            lang_mask = spatial_masks.get('language')
 
-            # --- Run ridge with all spatial masks ---
+        # --- Run ridge with all spatial masks (or region-only subset) ---
+        if run_ridge:
+            ridge_spatial_masks = spatial_masks
+            ridge_y = y
+            ridge_ceiling = ceiling_filtered
+            ridge_n_voxels = n_cm
+
+            if self.region_only and active_region is not None and rsa_mask is not None:
+                ridge_y = y[:, rsa_mask]
+                ridge_ceiling = ceiling_filtered[rsa_mask]
+                ridge_n_voxels = int(rsa_mask.sum())
+                ridge_spatial_masks = {
+                    'whole_brain': np.ones(ridge_n_voxels, dtype=bool),
+                    active_region: np.ones(ridge_n_voxels, dtype=bool),
+                }
+                print(f"Region-only mode enabled: using '{active_region}' "
+                      f"({ridge_n_voxels} ceiling voxels).")
+
+            if ridge_n_voxels == 0:
+                raise ValueError("No voxels available after applying region filter.")
+
             fold_scores = self._run_group_kfold(
-                X, y, groups, spatial_masks=spatial_masks)
+                X, ridge_y, groups, spatial_masks=ridge_spatial_masks)
 
             median_pearson = np.median(
                 fold_scores['pearson'], axis=0)
@@ -457,19 +517,19 @@ class LeBel2023AudioTRBenchmark:
 
             # --- Level 1: Global metrics ---
             results[ridge_key] = {
-                'n_ceiling_voxels': n_cm,
+                'n_ceiling_voxels': ridge_n_voxels,
                 'final_pearson_unceiled': float(
                     np.median(median_pearson)),
                 'final_pearson_ceiled': float(
-                    np.median(median_pearson / ceiling_filtered)),
+                    np.median(median_pearson / ridge_ceiling)),
                 'final_r2_unceiled': float(
                     np.median(median_r2)),
                 'final_r2_ceiled': float(
-                    np.median(median_r2 / ceiling_filtered)),
+                    np.median(median_r2 / ridge_ceiling)),
             }
 
             # Per-region global metrics
-            for grp, mask in spatial_masks.items():
+            for grp, mask in ridge_spatial_masks.items():
                 if grp == 'whole_brain':
                     continue
                 n_grp = int(mask.sum())
@@ -479,11 +539,11 @@ class LeBel2023AudioTRBenchmark:
                     np.median(median_pearson[mask]))
                 results[ridge_key][f'{grp}_pearson_ceiled'] = float(
                     np.median(median_pearson[mask]
-                              / ceiling_filtered[mask]))
+                              / ridge_ceiling[mask]))
                 results[ridge_key][f'{grp}_n_voxels'] = n_grp
 
             r = results[ridge_key]
-            print(f"Ridge ({n_cm} voxels): "
+            print(f"Ridge ({ridge_n_voxels} voxels): "
                   f"unceiled={r['final_pearson_unceiled']:.4f}, "
                   f"ceiled={r['final_pearson_ceiled']:.4f}")
             lang_n = r.get('language_n_voxels', 0)
@@ -593,13 +653,14 @@ class LeBel2023AudioTRBenchmark:
             # Filter fMRI to ceiling voxels for RSA too
             all_fmri_filtered = [f[:, cm] for f in all_fmri]
             print("Computing within-story temporal RSA...")
+            rsa_eval_mask = rsa_mask if rsa_mask is not None else lang_mask
             rsa_results = self._compute_temporal_rsa(
                 all_features, all_fmri_filtered,
-                lang_mask=rsa_mask or lang_mask)   # <-- use rsa_mask if set
-            if self.rsa_region is not None and 'median_rsa_lang' in rsa_results:
-                rsa_results[f'median_rsa_{self.rsa_region}'] = (
+                lang_mask=rsa_eval_mask)
+            if active_region is not None and 'median_rsa_lang' in rsa_results:
+                rsa_results[f'median_rsa_{active_region}'] = (
                     rsa_results.pop('median_rsa_lang'))
-                rsa_results[f'per_story_rsa_{self.rsa_region}'] = (
+                rsa_results[f'per_story_rsa_{active_region}'] = (
                     rsa_results.pop('per_story_rsa_lang'))
 
             results['temporal_rsa'] = rsa_results
@@ -616,6 +677,8 @@ class LeBel2023AudioTRBenchmark:
         results['hrf_delay'] = self.hrf_delay
         results['tr_duration'] = self.tr_duration
         results['lang_mask_threshold'] = self.lang_mask_threshold
+        results['analysis_region'] = active_region
+        results['region_only'] = self.region_only
         results['n_stories'] = len(
             [s for s in stimulus_set.story_names if s in story_fmri])
         n_total_trs = sum(f.shape[0] for f in all_features)
