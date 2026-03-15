@@ -344,6 +344,7 @@ class BaseDataset(ABC):
         path_parts = s3_path.split('//')[1].split('/', 1)
         bucket_name = path_parts[0]
         s3_key = path_parts[1] if len(path_parts) > 1 else ''
+        requested_directory = s3_path.endswith('/') or not s3_key
 
         # Configure boto3 client
         if anonymous:
@@ -377,7 +378,11 @@ class BaseDataset(ABC):
                 Bucket=bucket_name, Prefix=s3_key, Delimiter='/', MaxKeys=1
             )
 
-            if (  # It's a single file
+            if (
+                # Only treat as a single file when the caller requested a file,
+                # not a directory/prefix.
+                not requested_directory
+                and
                 'Contents' in response
                 and len(response['Contents']) == 1
                 and response['Contents'][0]['Key'] == s3_key
@@ -405,10 +410,15 @@ class BaseDataset(ABC):
                 if not os.path.exists(downloaded_dir):
                     os.makedirs(downloaded_dir)
 
+                downloaded_files = 0
                 for page in page_iterator:
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             key = obj['Key']
+                            # S3 directory markers end with '/' and should not
+                            # be downloaded as files.
+                            if key.endswith('/'):
+                                continue
                             relative_path = os.path.relpath(key, prefix)
                             local_path = os.path.join(
                                 downloaded_dir, relative_path
@@ -420,6 +430,14 @@ class BaseDataset(ABC):
                                 os.makedirs(local_dir)
                             s3_client.download_file(
                                 bucket_name, key, local_path)
+                            downloaded_files += 1
+
+                if downloaded_files == 0:
+                    raise FileNotFoundError(
+                        "No files were downloaded from S3 prefix "
+                        f"'{s3_path}'. Check bucket/path availability and "
+                        "network access."
+                    )
                 return downloaded_dir
 
         except ClientError as e:
