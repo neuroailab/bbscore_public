@@ -525,6 +525,27 @@ class TVSDAssemblyIT10msBins(TVSDAssembly):
         )
         super().__init__(root_dir=root, region='IT',
                          timebin_length=10, **kwargs)
+        
+class TVSDAssemblyV125msBins(TVSDAssembly):
+    def __init__(self, **kwargs):
+        root = os.path.join(
+            get_data_home(), TVSDAssembly.__name__
+            )
+        super().__init__(root_dir=root, region='V1', 
+                         timebin_length=25, **kwargs)
+
+class TVSDAssemblyV425msBins(TVSDAssembly):
+    def __init__(self, **kwargs):
+        root = os.path.join(get_data_home(), TVSDAssembly.__name__
+                            )
+        super().__init__(root_dir=root, region='V4', 
+                         timebin_length=25, **kwargs)
+
+class TVSDAssemblyIT25msBins(TVSDAssembly):
+    def __init__(self, **kwargs):
+        root = os.path.join(get_data_home(), TVSDAssembly.__name__)
+        super().__init__(root_dir=root, region='IT', 
+                         timebin_length=25, **kwargs)
 
 
 class TVSDAssemblyV1OneVsAll(TVSDAssembly):
