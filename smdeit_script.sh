@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bbscore_deit_rsa
+#SBATCH --job-name=deit_small
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=128G

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bbscore_runs
+#SBATCH --job-name=resnet_50
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=128G

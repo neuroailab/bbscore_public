@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bbscore_vit
+#SBATCH --job-name=vit_base
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
