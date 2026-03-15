@@ -146,10 +146,17 @@ class BaseDataset(ABC):
 
         filepath = os.path.join(target_dir, filename)
 
-        # Skip if file exists and no force_download
+        # Skip existing files, but do not skip directory-style cloud paths
+        # (e.g., s3://.../UTS02/) because the directory may exist yet be empty.
+        is_cloud_directory_source = (
+            (source.startswith('s3://') or source.startswith('gs://'))
+            and source.endswith('/')
+        )
+
         if os.path.exists(filepath) and not force_download:
-            print(f"File already exists at {filepath}")
-            return filepath
+            if not is_cloud_directory_source:
+                print(f"File already exists at {filepath}")
+                return filepath
 
         # Auto-determine download method
         if method == 'auto':
