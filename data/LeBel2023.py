@@ -468,8 +468,10 @@ class LeBel2023TRAssembly(BaseDataset):
             subjects = [subjects]
         self.subjects = subjects
         self.dataset_dir = os.path.join(self.root_dir, "ds003020")
+        # Prefer current OpenNeuro layout (derivatives), but keep
+        # compatibility with older snapshots (derivative).
         self.data_dir = os.path.join(
-            self.dataset_dir, "derivative", "preprocessed_data")
+            self.dataset_dir, "derivatives", "preprocessed_data")
 
     @staticmethod
     def _extract_story_name(filepath: str) -> str:
@@ -489,44 +491,70 @@ class LeBel2023TRAssembly(BaseDataset):
                 dset = hf[keys[0]][:]
         return dset
 
+    def _candidate_data_dirs(self, subj: str) -> List[str]:
+        roots = [
+            os.path.join(self.dataset_dir, "derivatives", "preprocessed_data"),
+            os.path.join(self.dataset_dir, "derivative", "preprocessed_data"),
+        ]
+        subj_variants = [subj, f"sub-{subj}"]
+        out = []
+        for root in roots:
+            for s in subj_variants:
+                out.append(os.path.join(root, s))
+        # Preserve order, remove duplicates.
+        return list(dict.fromkeys(out))
+
+    def _collect_hf5_files(self, subj: str) -> List[str]:
+        files = []
+        for path in self._candidate_data_dirs(subj):
+            files.extend(glob.glob(os.path.join(path, "*.hf5")))
+            files.extend(glob.glob(os.path.join(path, "**", "*.hf5"), recursive=True))
+        return sorted(list(dict.fromkeys(files)))
+
     def _ensure_data_downloaded(self, subj: str) -> List[str]:
         """Download subject data if needed, return sorted list of hf5 paths."""
-        s3_base = "s3://openneuro.org/ds003020/derivative/preprocessed_data/"
-        subj_path = os.path.join(self.data_dir, subj)
+        hf5_files = self._collect_hf5_files(subj)
 
-        hf5_files = sorted(
-            glob.glob(os.path.join(subj_path, "*.hf5")))
+        if len(hf5_files) == 0:
+            print(f"Found 0 files for {subj}. Downloading...")
+            s3_bases = [
+                "s3://openneuro.org/ds003020/derivatives/preprocessed_data/",
+                "s3://openneuro.org/ds003020/derivative/preprocessed_data/",
+            ]
+            subj_variants = [subj, f"sub-{subj}"]
+            target_roots = [
+                os.path.join(self.dataset_dir, "derivatives", "preprocessed_data"),
+                os.path.join(self.dataset_dir, "derivative", "preprocessed_data"),
+            ]
 
-        if not hf5_files and os.path.exists(subj_path):
-            hf5_files = sorted(glob.glob(os.path.join(
-                subj_path, "**", "*.hf5"), recursive=True))
+            for base in s3_bases:
+                for root in target_roots:
+                    for s in subj_variants:
+                        try:
+                            os.makedirs(root, exist_ok=True)
+                            self.fetch(
+                                source=f"{base}{s}/",
+                                target_dir=root,
+                                filename=s,
+                                method="s3",
+                                anonymous=True,
+                                force_download=True,
+                            )
+                        except Exception as e:
+                            print(f"Download attempt failed for {base}{s}/: {e}")
 
-        if len(hf5_files) < 84:
-            print(f"Found {len(hf5_files)} files for {subj}, "
-                  f"expected 84. Downloading...")
-            import shutil
-            if os.path.exists(subj_path) and len(hf5_files) > 0:
-                shutil.rmtree(subj_path)
-            try:
-                self.fetch(
-                    source=f"{s3_base}{subj}/",
-                    target_dir=self.data_dir,
-                    filename=subj,
-                    method="s3",
-                    anonymous=True
-                )
-            except Exception as e:
-                print(f"Error downloading data for {subj}: {e}")
+            hf5_files = self._collect_hf5_files(subj)
 
-            hf5_files = sorted(
-                glob.glob(os.path.join(subj_path, "*.hf5")))
-            if not hf5_files and os.path.exists(subj_path):
-                hf5_files = sorted(glob.glob(os.path.join(
-                    subj_path, "**", "*.hf5"), recursive=True))
+        if 0 < len(hf5_files) < 84:
+            print(
+                f"Warning: Found {len(hf5_files)} files for {subj} (expected around 84). "
+                "Proceeding with available files."
+            )
 
         if not hf5_files:
+            searched = self._candidate_data_dirs(subj)
             raise FileNotFoundError(
-                f"No .hf5 files found for {subj}")
+                f"No .hf5 files found for {subj}. Searched: {searched}")
 
         print(f"Found {len(hf5_files)} HF5 files for {subj}.")
         return hf5_files
@@ -972,8 +1000,10 @@ class LeBel2023FreeSurferLabels(BaseDataset):
     for subjects in the LeBel et al. (2023) dataset (OpenNeuro ds003020).
     """
 
-    S3_BASE = ("s3://openneuro.org/ds003020/"
-               "derivative/freesurfer_subjdir/")
+    S3_BASES = [
+        "s3://openneuro.org/ds003020/derivatives/freesurfer_subjdir/",
+        "s3://openneuro.org/ds003020/derivative/freesurfer_subjdir/",
+    ]
     NEEDED_FILES = [
         'lh.aparc.annot', 'rh.aparc.annot',
         'lh.cortex.label', 'rh.cortex.label',
@@ -985,14 +1015,34 @@ class LeBel2023FreeSurferLabels(BaseDataset):
 
     def _label_dir(self, subject: str) -> str:
         return os.path.join(
-            self.dataset_dir, "derivative",
+            self.dataset_dir, "derivatives",
             "freesurfer_subjdir", subject, "label")
+
+    def _candidate_label_dirs(self, subject: str) -> List[str]:
+        roots = [
+            os.path.join(self.dataset_dir, "derivatives", "freesurfer_subjdir"),
+            os.path.join(self.dataset_dir, "derivative", "freesurfer_subjdir"),
+        ]
+        subjects = [subject, f"sub-{subject}"]
+        dirs = []
+        for root in roots:
+            for sid in subjects:
+                dirs.append(os.path.join(root, sid, "label"))
+        return list(dict.fromkeys(dirs))
 
     def ensure_downloaded(self, subject: str) -> str:
         """Download FreeSurfer label files for *subject* if needed.
 
         Returns the local label directory path.
         """
+        candidate_dirs = self._candidate_label_dirs(subject)
+
+        # If one candidate already has all required files, use it.
+        for d in candidate_dirs:
+            if all(os.path.exists(os.path.join(d, f)) for f in self.NEEDED_FILES):
+                return d
+
+        # Download to canonical output directory.
         label_dir = self._label_dir(subject)
         os.makedirs(label_dir, exist_ok=True)
 
@@ -1000,15 +1050,35 @@ class LeBel2023FreeSurferLabels(BaseDataset):
             local_path = os.path.join(label_dir, fname)
             if os.path.exists(local_path):
                 continue
-            s3_path = (f"{self.S3_BASE}{subject}/label/{fname}")
-            print(f"Downloading {s3_path} ...")
-            self.fetch(
-                source=s3_path,
-                target_dir=label_dir,
-                filename=fname,
-                method="s3",
-                anonymous=True,
-            )
+
+            downloaded = False
+            for s3_base in self.S3_BASES:
+                for sid in [subject, f"sub-{subject}"]:
+                    s3_path = f"{s3_base}{sid}/label/{fname}"
+                    try:
+                        print(f"Downloading {s3_path} ...")
+                        self.fetch(
+                            source=s3_path,
+                            target_dir=label_dir,
+                            filename=fname,
+                            method="s3",
+                            anonymous=True,
+                            force_download=True,
+                        )
+                        if os.path.exists(local_path):
+                            downloaded = True
+                            break
+                    except Exception:
+                        continue
+                if downloaded:
+                    break
+
+            if not os.path.exists(local_path):
+                raise FileNotFoundError(
+                    f"Failed to download FreeSurfer label file '{fname}' "
+                    f"for subject '{subject}'."
+                )
+
         return label_dir
 
     def __len__(self):
