@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import h5py
 import re
+import warnings
 import soundfile as sf
 from collections import defaultdict
 from typing import Optional, List, Union, Callable, Dict, Tuple
@@ -511,9 +512,19 @@ class LeBel2023TRAssembly(BaseDataset):
             files.extend(glob.glob(os.path.join(path, "**", "*.hf5"), recursive=True))
         return sorted(list(dict.fromkeys(files)))
 
+    @staticmethod
+    def _dedupe_hf5_by_story(paths: List[str]) -> List[str]:
+        """Keep one HF5 per story filename across mirrored directories."""
+        chosen: Dict[str, str] = {}
+        for p in sorted(paths):
+            story = os.path.basename(p)
+            if story not in chosen:
+                chosen[story] = p
+        return list(chosen.values())
+
     def _ensure_data_downloaded(self, subj: str) -> List[str]:
         """Download subject data if needed, return sorted list of hf5 paths."""
-        hf5_files = self._collect_hf5_files(subj)
+        hf5_files = self._dedupe_hf5_by_story(self._collect_hf5_files(subj))
 
         if len(hf5_files) == 0:
             print(f"Found 0 files for {subj}. Downloading...")
@@ -543,7 +554,17 @@ class LeBel2023TRAssembly(BaseDataset):
                         except Exception as e:
                             print(f"Download attempt failed for {base}{s}/: {e}")
 
-            hf5_files = self._collect_hf5_files(subj)
+                        hf5_files = self._dedupe_hf5_by_story(
+                            self._collect_hf5_files(subj)
+                        )
+                        if len(hf5_files) >= 84:
+                            break
+                    if len(hf5_files) >= 84:
+                        break
+                if len(hf5_files) >= 84:
+                    break
+
+            hf5_files = self._dedupe_hf5_by_story(self._collect_hf5_files(subj))
 
         if 0 < len(hf5_files) < 84:
             print(
@@ -605,9 +626,18 @@ class LeBel2023TRAssembly(BaseDataset):
                 if len(runs) > 1:
                     # Average across repeated runs, align by min TR count
                     min_trs = min(r.shape[0] for r in runs)
+                    if min_trs == 0:
+                        print(f"Warning: story '{sname}' has zero TRs after alignment; skipping.")
+                        continue
                     aligned = [r[:min_trs] for r in runs]
-                    subj_story = np.nanmean(
-                        np.stack(aligned, axis=0), axis=0)
+                    stacked = np.stack(aligned, axis=0)
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message="Mean of empty slice",
+                            category=RuntimeWarning,
+                        )
+                        subj_story = np.nanmean(stacked, axis=0)
                 else:
                     subj_story = runs[0]
 
