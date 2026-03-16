@@ -28,3 +28,5 @@ NSDStimulusSet/
 
 # Local files
 generate_presentation.py
+
+route-learning/*
