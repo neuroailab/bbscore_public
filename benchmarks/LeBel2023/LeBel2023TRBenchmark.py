@@ -11,6 +11,7 @@ from sklearn.datasets import get_data_home
 from sklearn.model_selection import GroupKFold
 from sklearn.linear_model import RidgeCV
 from sklearn.metrics import r2_score
+from sklearn.random_projection import SparseRandomProjection
 
 from data.LeBel2023 import (
     LeBel2023TRStimulusSet, LeBel2023TRAssembly,
@@ -48,6 +49,8 @@ class LeBel2023TRBenchmark:
         lang_mask_threshold: float = 0.05,
         batch_size: Union[int, List[int]] = None,
         debug: bool = False,
+        random_projection: Optional[str] = None,
+        projection_dim: int = 1024,
     ):
         if batch_size is None:
             batch_size = [4]
@@ -58,6 +61,8 @@ class LeBel2023TRBenchmark:
         self.n_cv_folds = n_cv_folds
         self.lang_mask_threshold = lang_mask_threshold
         self.model_identifier = model_identifier
+        self.random_projection = random_projection  # "sparse" or None
+        self.projection_dim = projection_dim
 
         if isinstance(batch_size, list):
             self.batch_size = batch_size[0]
@@ -284,81 +289,113 @@ class LeBel2023TRBenchmark:
         if metric_params:
             self.metric_params[name] = metric_params
 
+    def _checkpoint_path(self):
+        layer_str = (self.layer_name if isinstance(self.layer_name, str)
+                     else "_".join(self.layer_names))
+        return os.path.join(
+            self.results_dir,
+            f"{self.model_identifier}_{layer_str}_{self.subject_id}_ridge_checkpoint.npz"
+        )
+
     def run(self):
         """
         Main TR-level encoding model pipeline.
+        Supports resume: if a ridge checkpoint exists, skips extraction and runs ridge only.
         """
-        # 1. Load stimuli with timestamps
-        print("Loading TR-level stimuli...")
-        stimulus_set = LeBel2023TRStimulusSet(
-            tr_duration=self.tr_duration
-        )
+        layer_str = (self.layer_name if isinstance(self.layer_name, str)
+                     else "_".join(self.layer_names))
+        checkpoint_path = self._checkpoint_path()
+        from_checkpoint = os.path.exists(checkpoint_path)
 
-        # 2. Load fMRI time series
-        print(f"Loading fMRI assembly for {self.subject_id}...")
-        assembly = LeBel2023TRAssembly(
-            subjects=[self.subject_id]
-        )
-        story_fmri, ncsnr = assembly.get_assembly(
-            story_names=stimulus_set.story_names
-        )
+        if from_checkpoint:
+            print(f"Resuming from checkpoint: {checkpoint_path}")
+            data = np.load(checkpoint_path, allow_pickle=True)
+            X = data['X']
+            y = data['y']
+            groups = data['groups']
+            ncsnr = float(data['ncsnr']) if 'ncsnr' in data else None
+            print(f"Loaded: TRs={X.shape[0]}, features={X.shape[1]}, voxels={y.shape[1]}")
+            all_features = []
+            all_fmri = []
+            all_story_labels = []
+        else:
+            ncsnr = None
+            X = None
+            y = None
+            groups = None
 
-        # 3. Extract features and align with fMRI per story
-        all_features = []
-        all_fmri = []
-        all_story_labels = []
+            # 1. Load stimuli with timestamps
+            print("Loading TR-level stimuli...")
+            stimulus_set = LeBel2023TRStimulusSet(
+                tr_duration=self.tr_duration
+            )
 
-        for story_idx, story_name in enumerate(stimulus_set.story_names):
-            if story_name not in story_fmri:
-                print(f"Warning: No fMRI data for story "
-                      f"'{story_name}', skipping.")
-                continue
+            # 2. Load fMRI time series
+            print(f"Loading fMRI assembly for {self.subject_id}...")
+            assembly = LeBel2023TRAssembly(
+                subjects=[self.subject_id]
+            )
+            story_fmri, ncsnr = assembly.get_assembly(
+                story_names=stimulus_set.story_names
+            )
 
-            print(f"Processing story {story_idx + 1}/"
-                  f"{len(stimulus_set.story_names)}: {story_name}")
+            # 3. Extract features and align with fMRI per story
+            all_features = []
+            all_fmri = []
+            all_story_labels = []
 
-            story_features = self._extract_story_features(
-                stimulus_set, story_idx)
-            fmri_data = story_fmri[story_name]
+            for story_idx, story_name in enumerate(stimulus_set.story_names):
+                if story_name not in story_fmri:
+                    print(f"Warning: No fMRI data for story "
+                          f"'{story_name}', skipping.")
+                    continue
 
-            if story_features.size == 0:
-                print(f"  Skipping {story_name}: no features extracted.")
-                continue
+                print(f"Processing story {story_idx + 1}/"
+                      f"{len(stimulus_set.story_names)}: {story_name}")
 
-            # Align TR counts
-            n_trs_feat = story_features.shape[0]
-            n_trs_fmri = fmri_data.shape[0]
-            n_trs = min(n_trs_feat, n_trs_fmri)
+                story_features = self._extract_story_features(
+                    stimulus_set, story_idx)
+                fmri_data = story_fmri[story_name]
 
-            if n_trs < self.hrf_delay + 1:
-                print(f"  Skipping {story_name}: "
-                      f"too few TRs ({n_trs})")
-                continue
+                if story_features.size == 0:
+                    print(f"  Skipping {story_name}: no features extracted.")
+                    continue
 
-            story_features = story_features[:n_trs]
-            fmri_data = fmri_data[:n_trs]
+                # Align TR counts
+                n_trs_feat = story_features.shape[0]
+                n_trs_fmri = fmri_data.shape[0]
+                n_trs = min(n_trs_feat, n_trs_fmri)
 
-            # 4. Apply HRF delay
-            # Feature at TR_t predicts fMRI at TR_(t + hrf_delay)
-            shifted_features = story_features[:n_trs - self.hrf_delay]
-            shifted_fmri = fmri_data[self.hrf_delay:]
+                if n_trs < self.hrf_delay + 1:
+                    print(f"  Skipping {story_name}: "
+                          f"too few TRs ({n_trs})")
+                    continue
 
-            all_features.append(shifted_features)
-            all_fmri.append(shifted_fmri)
-            all_story_labels.extend(
-                [story_idx] * shifted_features.shape[0])
+                story_features = story_features[:n_trs]
+                fmri_data = fmri_data[:n_trs]
 
-            if self.debug:
-                print(f"  TRs: feat={n_trs_feat}, fmri={n_trs_fmri}, "
-                      f"used={shifted_features.shape[0]}")
+                # 4. Apply HRF delay
+                # Feature at TR_t predicts fMRI at TR_(t + hrf_delay)
+                shifted_features = story_features[:n_trs - self.hrf_delay]
+                shifted_fmri = fmri_data[self.hrf_delay:]
 
-        if not all_features:
-            raise ValueError("No data after alignment.")
+                all_features.append(shifted_features)
+                all_fmri.append(shifted_fmri)
+                all_story_labels.extend(
+                    [story_idx] * shifted_features.shape[0])
+
+                if self.debug:
+                    print(f"  TRs: feat={n_trs_feat}, fmri={n_trs_fmri}, "
+                          f"used={shifted_features.shape[0]}")
+
+            if not all_features:
+                raise ValueError("No data after alignment.")
 
         # Determine which analyses to run
         run_ridge = any(
             m in self.metrics for m in ['ridge', 'torch_ridge'])
-        run_temporal_rsa = 'temporal_rsa' in self.metrics
+        run_temporal_rsa = False if from_checkpoint else (
+            'temporal_rsa' in self.metrics)
         # Default to ridge if no recognized metric
         if not run_ridge and not run_temporal_rsa:
             run_ridge = True
@@ -369,9 +406,24 @@ class LeBel2023TRBenchmark:
 
         # 5. Ridge regression (produces language mask)
         if run_ridge:
-            X = np.concatenate(all_features, axis=0)
-            y = np.concatenate(all_fmri, axis=0)
-            groups = np.array(all_story_labels)
+            if not from_checkpoint:
+                X = np.concatenate(all_features, axis=0)
+                if self.random_projection == 'sparse':
+                    proj = SparseRandomProjection(
+                        n_components=self.projection_dim,
+                        random_state=42,
+                        density='auto',
+                    )
+                    X = proj.fit_transform(X)
+                    print(f"Sparse random projection: {all_features[0].shape[1]} -> {X.shape[1]} dims")
+                y = np.concatenate(all_fmri, axis=0)
+                groups = np.array(all_story_labels)
+                # Save checkpoint before ridge so we can resume if killed
+                print(f"Saving checkpoint to {checkpoint_path} ...")
+                np.savez_compressed(
+                    checkpoint_path, X=X, y=y, groups=groups, ncsnr=ncsnr
+                )
+                print("Checkpoint saved.")
 
             print(f"Total TRs: {X.shape[0]}, "
                   f"Feature dim: {X.shape[1]}, "
@@ -518,10 +570,12 @@ class LeBel2023TRBenchmark:
         results['hrf_delay'] = self.hrf_delay
         results['tr_duration'] = self.tr_duration
         results['lang_mask_threshold'] = self.lang_mask_threshold
-        results['n_stories'] = len(
-            [s for s in stimulus_set.story_names if s in story_fmri])
-        n_total_trs = sum(f.shape[0] for f in all_features)
-        results['total_trs'] = n_total_trs
+        results['n_stories'] = (
+            len(np.unique(groups)) if from_checkpoint
+            else len([s for s in stimulus_set.story_names if s in story_fmri]))
+        results['total_trs'] = (
+            X.shape[0] if from_checkpoint
+            else sum(f.shape[0] for f in all_features))
 
         # Save results
         layer_str = (self.layer_name if isinstance(self.layer_name, str)
@@ -543,12 +597,14 @@ class LeBel2023TRBenchmark:
     def _run_group_kfold(self, X, y, groups):
         """
         Ridge regression with GroupKFold CV (stories as groups).
+        Processes voxels in chunks to stay within memory (avoids OOM on 96GB).
 
         Returns:
             dict with 'pearson' and 'r2' keys, each (n_folds, n_voxels)
         """
         n_unique_groups = len(np.unique(groups))
         n_splits = min(self.n_cv_folds, n_unique_groups)
+        n_voxels = y.shape[1]
 
         if n_splits < 2:
             raise ValueError(
@@ -560,6 +616,9 @@ class LeBel2023TRBenchmark:
         alphas = [1e-6, 1e-4, 1e-2, 1.0, 10.0,
                   100.0, 1e4, 1e6]
 
+        # Process voxels in chunks to avoid OOM (full y is ~17GB at float64)
+        ridge_voxel_chunk = getattr(
+            self, 'ridge_voxel_chunk_size', 2000)
         pearson_scores = []
         r2_scores = []
 
@@ -569,24 +628,26 @@ class LeBel2023TRBenchmark:
                   f"train={len(train_idx)}, val={len(val_idx)}")
 
             X_train, X_val = X[train_idx], X[val_idx]
-            y_train, y_val = y[train_idx], y[val_idx]
 
-            model = RidgeCV(alphas=alphas, store_cv_results=False)
-            model.fit(X_train, y_train)
-            preds = model.predict(X_val)
+            fold_pearson = np.zeros(n_voxels, dtype=np.float64)
+            fold_r2 = np.zeros(n_voxels, dtype=np.float64)
 
-            # Per-voxel Pearson correlation
-            fold_pearson = np.array([
-                pearson_correlation_scorer(y_val[:, i], preds[:, i])
-                for i in range(y.shape[1])
-            ])
+            for start in range(0, n_voxels, ridge_voxel_chunk):
+                end = min(start + ridge_voxel_chunk, n_voxels)
+                y_train_chunk = y[train_idx, start:end]
+                y_val_chunk = y[val_idx, start:end]
+
+                model = RidgeCV(alphas=alphas, store_cv_results=False)
+                model.fit(X_train, y_train_chunk)
+                preds = model.predict(X_val)
+
+                for i in range(end - start):
+                    fold_pearson[start + i] = pearson_correlation_scorer(
+                        y_val_chunk[:, i], preds[:, i])
+                    fold_r2[start + i] = r2_score(
+                        y_val_chunk[:, i], preds[:, i])
+
             pearson_scores.append(fold_pearson)
-
-            # Per-voxel R2
-            fold_r2 = np.array([
-                r2_score(y_val[:, i], preds[:, i])
-                for i in range(y.shape[1])
-            ])
             r2_scores.append(fold_r2)
 
         return {
