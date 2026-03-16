@@ -468,7 +468,7 @@ class TVSDAssemblyFull10msBins(TVSDAssembly):
             get_data_home(), TVSDAssembly.__name__
         )
         super().__init__(root_dir=root, region='Full',
-                         timebin_length='default',
+                         timebin_length=10,
                          **kwargs)
 
 
