@@ -51,6 +51,7 @@ MODEL_MODULES = [
     "torch_video",
     "timesformer",
     "vgg",
+    "vilt",
     "voneresnet",
     "videomae",
     "vit",

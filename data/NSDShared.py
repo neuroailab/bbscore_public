@@ -3,7 +3,6 @@ import numpy as np
 import os
 import pandas as pd
 import torch
-
 from PIL import Image
 from sklearn.datasets import get_data_home
 from torchvision import transforms
@@ -38,7 +37,12 @@ class NSDStimulusSet(BaseDataset):
             self.preprocess = self._define_default_preprocess()
         else:
             self.preprocess = preprocess
+
         self.test_image_data = None
+        self.test_image_metadata = None
+
+        self.shuffle_captions = os.environ.get('BBSCORE_VILT_SHUFFLE_CAPTIONS', '0') == '1'
+        self.shuffled_captions = None
 
     def _define_default_preprocess(self):
         """Define the default torchvision preprocessing transform."""
@@ -48,13 +52,13 @@ class NSDStimulusSet(BaseDataset):
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]
                 ),
             ]
         )
 
     _GCS_BASE_URL = 'https://storage.googleapis.com/bbscore_datasets/nsd'
-
     _GDRIVE_FILE_IDS = {
         'subj01': '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr',
         'subj02': '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID',
@@ -92,12 +96,28 @@ class NSDStimulusSet(BaseDataset):
                     method='gdown',
                     force_download=self.overwrite,
                 )
+
         return np.load(output, allow_pickle=True)
 
     def _prepare_images(self, subj: str = 'subj01'):
         """Load and preprocess the test images."""
         Y = self._download_nsd_data(subj)
         self.test_image_data = Y['image_data']['test']
+        try:
+            self.test_image_metadata = Y['image_metadata']['test']
+            captions_series = self.test_image_metadata['coco_annotations']['coco_captions']
+
+            if self.shuffle_captions:
+                perm = np.random.RandomState(0).permutation(len(captions_series))
+                self.shuffled_captions = captions_series.iloc[perm].reset_index(drop=True)
+                print('[NSDStimulusSet] Using shuffled COCO captions.')
+            else:
+                self.shuffled_captions = None
+
+            print('[NSDStimulusSet] COCO captions detected in NSD image metadata.')
+        except Exception:
+            self.test_image_metadata = None
+            print('[NSDStimulusSet] COCO captions not found in NSD image metadata.')
 
     def __len__(self):
         """Return the number of test images."""
@@ -109,11 +129,36 @@ class NSDStimulusSet(BaseDataset):
         """Return a preprocessed image."""
         if self.test_image_data is None:
             self._prepare_images()
+
         image = self.test_image_data[idx]
+
         # Convert numpy array to PIL image
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
-        return self.preprocess(image)
+
+        captions = None
+        if self.test_image_metadata is not None:
+            try:
+                if self.shuffle_captions and self.shuffled_captions is not None:
+                    captions = self.shuffled_captions.iloc[idx]
+                else:
+                    captions = self.test_image_metadata['coco_annotations']['coco_captions'].iloc[idx]
+            except Exception:
+                captions = None
+
+        sample = {
+            'image': image,
+            'index': idx,
+            'captions': captions,
+        }
+
+        preprocess_owner = getattr(self.preprocess, '__self__', None)
+        expects_metadata = getattr(preprocess_owner, 'expects_metadata', False)
+
+        if expects_metadata:
+            return self.preprocess(sample)
+        else:
+            return self.preprocess(image)
 
 
 class NSDAssembly(BaseDataset):
@@ -144,12 +189,12 @@ class NSDAssembly(BaseDataset):
         self.regions = regions
         self.overwrite = overwrite
         self.ncsnr_threshold = ncsnr_threshold
+
         self.data = {}  # Store data for each subject
         self.test_fmri_data = None
         self.ncsnr_data = None
 
     _GCS_BASE_URL = 'https://storage.googleapis.com/bbscore_datasets/nsd'
-
     _GDRIVE_FILE_IDS = {
         'subj01': '13cRiwhjurCdr4G2omRZSOMO_tmatjdQr',
         'subj02': '1MO9reLoV4fqu6Weh4gmE78KJVtxg72ID',
@@ -187,6 +232,7 @@ class NSDAssembly(BaseDataset):
                     method='gdown',
                     force_download=self.overwrite,
                 )
+
         self.data[subj] = np.load(output, allow_pickle=True)
 
     def _get_metadata_concat_hemi(self, Y: Dict) -> Tuple[np.ndarray, pd.DataFrame]:
@@ -204,10 +250,10 @@ class NSDAssembly(BaseDataset):
             )
         )
         nsdgeneral_mask = np.logical_and(
-            nsdgeneral_idx == 'nsdgeneral', ncsnr_full > 0
+            nsdgeneral_idx == 'nsdgeneral',
+            ncsnr_full > 0
         )
         ncsnr_nsdgeneral = ncsnr_full[nsdgeneral_mask]
-
         metadata_lh = pd.DataFrame(Y['voxel_metadata']['lh'])
         metadata_rh = pd.DataFrame(Y['voxel_metadata']['rh'])
         nsdgeneral_metadata_df = pd.concat([metadata_lh, metadata_rh])[
@@ -238,14 +284,11 @@ class NSDAssembly(BaseDataset):
         Returns:
             Tuple: (Combined brain data, Dictionary of area-specific NCSNR values).
         """
-
         data_dict: Dict[str, np.ndarray] = {}  # Temporary dict for brain data
         ncsnr_dict: Dict[str, np.ndarray] = {}  # Dict for area-specific NCSNR
 
         for region in regions:
-            if region in ['ventral', 'parietal', 'lateral',
-                          'highventral', 'highparietal', 'highlateral',
-                          'midparietal', 'midlateral', 'midventral']:
+            if region in ['ventral', 'parietal', 'lateral', 'highventral', 'highparietal', 'highlateral', 'midparietal', 'midlateral', 'midventral']:
                 if region.startswith("high"):
                     # Extract the base region name, e.g. 'highventral' becomes 'ventral'
                     base_region = region.replace("high", "")
@@ -259,7 +302,6 @@ class NSDAssembly(BaseDataset):
                         str).str.contains(region, na=False)
                     rh_area_mask = nsdgeneral_metadata_df['rh.streams.label'].astype(
                         str).str.contains(region, na=False)
-
             elif region in ['V1', 'V2', 'V3', 'V4', 'V1d', 'V2d', 'V1v', 'V3d', 'V2v', 'V3v']:
                 lh_area_mask = (
                     nsdgeneral_metadata_df['lh.prf-visualrois.label']
@@ -284,6 +326,7 @@ class NSDAssembly(BaseDataset):
                     f"Size of area {region}: {np.sum(area_mask_thresholded)}")
 
             area_data = brain_data_rep_averaged[:, area_mask_thresholded]
+
             # Crucial: get NCSNR *after* thresholding
             area_ncsnr = ncsnr_nsdgeneral[area_mask_thresholded]
 
@@ -293,6 +336,7 @@ class NSDAssembly(BaseDataset):
             else:
                 data_dict[region] = np.concatenate(
                     (data_dict[region], area_data), axis=1)
+
                 # Concatenate NCSNR too.
                 ncsnr_dict[region] = np.concatenate(
                     (ncsnr_dict[region], area_ncsnr))
@@ -322,7 +366,6 @@ class NSDAssembly(BaseDataset):
         for subj in self.subjects:
             if subj not in self.data:
                 self._download_nsd_data(subj)
-
             Y = self.data[subj]
             ncsnr_nsdgeneral, nsdgeneral_metadata_df = (
                 self._get_metadata_concat_hemi(Y)
@@ -370,14 +413,13 @@ class NSDAssembly(BaseDataset):
 
     def __len__(self):
         if self.test_fmri_data is None:
-            self.prepare_data(regions)
+            self.prepare_data(self.regions)
         return self.test_fmri_data.shape[0]
 
     def __getitem__(self, idx: int) -> Tuple[np.ndarray, np.ndarray]:
         """Return (fMRI data, ncsnr) for the index."""
         if self.test_fmri_data is None or self.ncsnr_data is None:
-            self.prepare_data(regions)
-
+            self.prepare_data(self.regions)
         return self.test_fmri_data[idx], self.ncsnr_data[idx]
 
 
