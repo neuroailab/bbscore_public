@@ -137,15 +137,31 @@ class FeatureExtractor:
         np.random.seed(42)
 
         if self.random_projection == "sparse":
-            # Sparse random projection
+            # Memory-efficient sparse random projection via COO format.
+            # Instead of allocating a full (original_dim x target_dim) dense matrix,
+            # we sample non-zero entries column-by-column.
             density = 1.0 / np.sqrt(original_dim)
             density = min(1.0, max(0.001, density))
             s = 1.0 / density
-            mask = torch.rand(original_dim, self.target_dim) < density
-            values = torch.randint(
-                0, 2, (original_dim, self.target_dim), dtype=torch.float32) * 2 - 1
-            projection = torch.where(
-                mask, values * np.sqrt(s), torch.zeros_like(values))
+            scale = float(np.sqrt(s))
+            nnz_per_col = max(1, int(round(density * original_dim)))
+
+            # Vectorized construction: sample all non-zeros at once.
+            # With original_dim ~millions and nnz_per_col ~sqrt(D), collision
+            # probability per column is nnz_per_col/original_dim << 1%, so
+            # sampling with replacement is statistically equivalent.
+            total_nnz = nnz_per_col * self.target_dim
+            row_indices = np.random.randint(0, original_dim, size=total_nnz, dtype=np.int64)
+            col_indices = np.repeat(np.arange(self.target_dim, dtype=np.int64), nnz_per_col)
+            vals = ((np.random.randint(0, 2, size=total_nnz) * 2 - 1).astype(np.float32)
+                    * scale)
+
+            indices = torch.from_numpy(np.stack([row_indices, col_indices], axis=0))
+            values_t = torch.from_numpy(vals)
+            projection = torch.sparse_coo_tensor(
+                indices, values_t, size=(original_dim, self.target_dim),
+                dtype=torch.float32
+            ).coalesce()
 
         elif self.random_projection == "dense":
             # Dense Gaussian random projection
@@ -184,8 +200,12 @@ class FeatureExtractor:
             N, T, D = original_shape
             features = features.reshape(-1, D)
 
-        projection_matrix = proj_mat.to(dtype=features.dtype)
-        projected = torch.matmul(features, projection_matrix)
+        if proj_mat.is_sparse:
+            # sparse mm doesn't support half precision; cast to float32
+            projection_matrix = proj_mat.to(dtype=torch.float32)
+            projected = torch.sparse.mm(projection_matrix.t(), features.float().t()).t().to(dtype=features.dtype)
+        else:
+            projected = torch.matmul(features, proj_mat.to(dtype=features.dtype))
 
         if is_temporal:
             projected = projected.reshape(N, T, self.target_dim)

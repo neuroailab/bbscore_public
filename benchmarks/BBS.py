@@ -2,6 +2,7 @@ import os
 import pickle
 import configparser
 import datetime
+import time
 import getpass
 import numpy as np
 import pickle
@@ -133,6 +134,17 @@ class BenchmarkScore:
 
         self.save_features = save_features
 
+    def _feature_cache_path(self):
+        stim_name = self.stimulus_train.__class__.__name__
+        rp = self.extractor.random_projection or 'none'
+        tdim = self.extractor.target_dim if self.extractor.random_projection else 'full'
+        layer_str = '_'.join(self.layer_names) if isinstance(self.layer_names, list) else str(self.layer_names)
+        if len(layer_str) > 80:
+            import hashlib
+            layer_str = hashlib.md5(layer_str.encode()).hexdigest()[:8]
+        fname = f"{self.model_identifier}_{layer_str}_{stim_name}_{rp}_{tdim}_features.pkl"
+        return os.path.join(self.features_path, fname)
+
     def initialize_rp(self, rp):
         self.extractor.random_projection = rp
 
@@ -220,6 +232,7 @@ class BenchmarkScore:
                 continue
 
         results['timestamp'] = datetime.datetime.utcnow().isoformat()
+        results['elapsed_seconds'] = round(time.time() - self._run_start, 1)
         results['aggregation_mode'] = self.aggregation_mode
 
         benchmark_name = self.__class__.__name__
@@ -266,6 +279,7 @@ class BenchmarkScore:
         return results, ceiling
 
     def run(self):
+        self._run_start = time.time()
 
         # --- Memory Estimation (Warmup) ---
         ridge_metrics_present = any(
@@ -339,22 +353,59 @@ class BenchmarkScore:
 
             total_needed = (N_train + N_test) * cost_per_sample
 
-            if total_needed > available_for_features:
+            # Apply RP whenever features exceed the smart-memory target dim. This
+            # prevents OOM in both the feature matrix (N×D) and the ridge coefficient
+            # matrix (T×D), where T (n_voxels) is not known until assembly load time.
+            _smart_target_dim = 32 * 1024
+            if elements_per_sample > _smart_target_dim:
+                if self.extractor.random_projection is None:
+                    self.extractor.random_projection = "sparse"
+                    self.extractor.target_dim = _smart_target_dim
+                    print(
+                        f"--- Smart Memory: Auto-enabled sparse RP {elements_per_sample} -> "
+                        f"{_smart_target_dim} dims ---")
+                else:
+                    print(
+                        f"--- Smart Memory: RP already configured ({self.extractor.target_dim} dims) ---")
+            elif total_needed > available_for_features:
+                # Features are small but too many samples — apply sample downsampling
                 downsample_factor = available_for_features / total_needed
                 print(
                     f"--- Smart Memory: Downsampling factor set to {downsample_factor:.4f} ---")
             else:
-                print("--- Smart Memory: Sufficient memory, no downsampling. ---")
+                print("--- Smart Memory: Sufficient memory, no action needed. ---")
+
+        # --- Feature Cache Load ---
+        features_train_raw, labels_train = None, None
+        features_test_raw, labels_test = None, None
+        if self.save_features:
+            cache_path = self._feature_cache_path()
+            if os.path.exists(cache_path):
+                print(f"Loading cached features from {cache_path}")
+                with open(cache_path, 'rb') as f:
+                    cached = pickle.load(f)
+                features_train_raw = cached['train']
+                labels_train = cached['train_labels']
+                features_test_raw = cached.get('test')
+                labels_test = cached.get('test_labels')
 
         # --- Extraction ---
-        print("Extracting features...")
-        features_train_raw, labels_train = self.extractor.extract_features(
-            self.stimulus_train, downsample_factor)
+        if features_train_raw is None:
+            print("Extracting features...")
+            features_train_raw, labels_train = self.extractor.extract_features(
+                self.stimulus_train, downsample_factor)
 
-        features_test_raw, labels_test = None, None
-        if self.stimulus_test is not None:
-            features_test_raw, labels_test = self.extractor.extract_features(
-                self.stimulus_test, downsample_factor, self.test_batch_size)
+            if self.stimulus_test is not None:
+                features_test_raw, labels_test = self.extractor.extract_features(
+                    self.stimulus_test, downsample_factor, self.test_batch_size)
+
+            if self.save_features:
+                cache_path = self._feature_cache_path()
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                print(f"Saving features to {cache_path}")
+                with open(cache_path, 'wb') as f:
+                    pickle.dump({'train': features_train_raw, 'train_labels': labels_train,
+                                 'test': features_test_raw, 'test_labels': labels_test}, f)
 
         all_results = {}
 
