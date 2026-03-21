@@ -89,6 +89,9 @@ def run_kfold_cv(
             else:
                 scores[name].append(np.array(scoring_func(y_val, fold_preds)))
 
+        # Free model after each fold to avoid accumulation
+        del model
+
     return {name: np.array(score_list, dtype=object) for name, score_list in scores.items()}
 
 

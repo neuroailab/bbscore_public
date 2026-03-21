@@ -1,3 +1,4 @@
+import gc
 import gdown
 import numpy as np
 import os
@@ -323,18 +324,26 @@ class NSDAssembly(BaseDataset):
             if subj not in self.data:
                 self._download_nsd_data(subj)
 
-            Y = self.data[subj]
-            ncsnr_nsdgeneral, nsdgeneral_metadata_df = (
-                self._get_metadata_concat_hemi(Y)
-            )
+            Y = self.data.pop(subj)
+
+            # Extract only what we need (direct references to nested arrays)
+            brain_test_lh = Y['brain_data']['test']['lh']
+            brain_test_rh = Y['brain_data']['test']['rh']
+            ncsnr_nsdgeneral, nsdgeneral_metadata_df = self._get_metadata_concat_hemi(Y)
+
+            # Delete the full pickle — frees image_data, brain_data['train'], etc.
+            del Y
+            gc.collect()
 
             test_brain_data_cat = np.concatenate(
                 (
-                    Y['brain_data']['test']['lh'],
-                    Y['brain_data']['test']['rh'],
+                    brain_test_lh,
+                    brain_test_rh,
                 ),
                 axis=2,
             )
+            del brain_test_lh, brain_test_rh
+
             test_brain_data_cat = np.mean(test_brain_data_cat, axis=1)
 
             subj_test_fmri_data, subj_test_ncsnr = self._get_data_dict(
@@ -343,6 +352,8 @@ class NSDAssembly(BaseDataset):
                 nsdgeneral_metadata_df,
                 regions,
             )
+            del test_brain_data_cat, ncsnr_nsdgeneral, nsdgeneral_metadata_df
+            gc.collect()
 
             all_responses.append(subj_test_fmri_data)
             all_ncsnr.append(subj_test_ncsnr)
