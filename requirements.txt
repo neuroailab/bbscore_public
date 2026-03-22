@@ -65,3 +65,4 @@ openstl @ git+https://github.com/thekej/OpenSTL.git
 S3D_HowTo100M @ git+https://github.com/YingtianDt/S3D_HowTo100M
 vonenet @ git+https://github.com/dicarlolab/vonenet.git
 jepa @ git+https://github.com/thekej/jepa.git
+dualneuron @ git+https://github.com/enigma-brain/dualneuron.git

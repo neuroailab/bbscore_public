@@ -16,6 +16,7 @@ MODEL_MODULES = [
     "dino",
     "dinov2",
     "dinov2_lstm",
+    "dualneuron",
     "fitvid",
     "gpt2",
     "gdt",
