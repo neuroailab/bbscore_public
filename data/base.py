@@ -458,11 +458,18 @@ class BaseDataset(ABC):
                 "Invalid GCS URL. Expected format: gs://bucket_name/path/to/file")
         bucket_name, blob_name = parts
 
-        # Initialize the GCS client (assumes credentials are set up via GOOGLE_APPLICATION_CREDENTIALS)
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(blob_name)
-        blob.download_to_filename(filepath)
+        # Try authenticated access first, fall back to anonymous for public buckets
+        try:
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            blob.download_to_filename(filepath)
+        except Exception:
+            print("Authenticated GCS access failed, trying anonymous access...")
+            client = storage.Client.create_anonymous_client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            blob.download_to_filename(filepath)
         return filepath
 
     def extract(

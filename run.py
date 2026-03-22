@@ -17,7 +17,9 @@ def test_pipeline(
     debug: bool,
     use_ridge_smart_memory: bool,
     random_projection: str,
-    aggregation_mode: str
+    aggregation_mode: str,
+    target_dim: int = None,
+    cache_features: bool = False,
 ):
     """
     Tests the benchmark pipeline with a given model, layer(s), and benchmark.
@@ -85,6 +87,11 @@ def test_pipeline(
         print(
             f"Warning: Benchmark '{benchmark_identifier}' does not support aggregation. Ignoring mode '{aggregation_mode}'.")
 
+    # Set Feature Caching
+    if hasattr(pipeline, 'save_features') and cache_features:
+        pipeline.save_features = True
+        print("Feature caching is ENABLED.")
+
     # Set Memory Optimization
     if hasattr(pipeline, 'use_ridge_smart_memory'):
         pipeline.use_ridge_smart_memory = use_ridge_smart_memory
@@ -95,7 +102,9 @@ def test_pipeline(
     if hasattr(pipeline, 'initialize_rp'):
         if random_projection:
             pipeline.initialize_rp(random_projection)
-            print(f"Using {random_projection} Random Projection.")
+            if target_dim is not None:
+                pipeline.extractor.target_dim = target_dim
+            print(f"Using {random_projection} Random Projection (target_dim={pipeline.extractor.target_dim}).")
     elif random_projection:
         print(
             f"Warning: Benchmark '{benchmark_identifier}' does not support Random Projection. Ignoring.")
@@ -192,6 +201,11 @@ if __name__ == "__main__":
         help="Enable smart memory estimation for ridge regression.",
     )
     parser.add_argument(
+        "--cache-features",
+        action="store_true",
+        help="Save extracted features to disk and reuse them on subsequent runs with the same model/layer/dataset/RP settings.",
+    )
+    parser.add_argument(
         "--random-projection",
         type=str,
         default=None,
@@ -203,6 +217,12 @@ if __name__ == "__main__":
         default="none",
         choices=["none", "concatenate", "stack"],
         help="How to combine layers: 'none' (separate), 'concatenate' (feature concat), 'stack' (new dim).",
+    )
+    parser.add_argument(
+        "--target-dim",
+        type=int,
+        default=None,
+        help="Target dimensionality for random projection (overrides extractor default of 1024).",
     )
 
     args = parser.parse_args()
@@ -223,5 +243,7 @@ if __name__ == "__main__":
         debug=args.debug,
         use_ridge_smart_memory=args.use_ridge_smart_memory,
         random_projection=args.random_projection,
-        aggregation_mode=args.aggregation_mode
+        aggregation_mode=args.aggregation_mode,
+        target_dim=args.target_dim,
+        cache_features=args.cache_features,
     )
