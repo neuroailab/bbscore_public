@@ -36,7 +36,7 @@ class Wav2Vec2:
             input_data, sampling_rate=16000,
             return_tensors="pt", padding=True
         )
-        return inputs.input_values
+        return inputs.input_values.squeeze(0)
 
     def postprocess_fn(self, features):
         """Mean-pool encoder output (B, seq_len, hidden_dim) -> (B, hidden_dim)."""

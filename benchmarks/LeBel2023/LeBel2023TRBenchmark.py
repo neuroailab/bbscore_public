@@ -718,6 +718,8 @@ class LeBel2023TRBenchmark:
 
             # Per-TR spatial correlation for each mask
             for mask_name, mask in spatial_masks.items():
+                if mask.sum() < 2:
+                    continue
                 p_v = preds[:, mask]
                 y_v = y_val[:, mask]
                 for local_i, global_i in enumerate(val_idx):

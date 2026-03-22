@@ -17,6 +17,8 @@ import torch
 def pearson_correlation_scorer(y_true, y_pred, eps=1e-8):
     y_true = y_true.ravel()
     y_pred = y_pred.ravel()
+    if len(y_true) < 2:
+        return np.nan
     var_true = np.var(y_true)
     var_pred = np.var(y_pred)
     # if either has (almost) zero variance, define a default:
