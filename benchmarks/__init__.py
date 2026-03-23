@@ -26,3 +26,8 @@ except ImportError as _e:
 from benchmarks.SSV2 import SSV2Benchmark
 from benchmarks.V1SineGratings import V1SineGratingsBenchmark
 from benchmarks.LeBel2023 import LeBel2023Benchmark
+
+try:
+    from benchmarks.RouteLearning import RouteLearningBenchmark
+except ImportError as _e:
+    print(f"[Warning] Failed to import benchmark module: RouteLearning\n{_e}")

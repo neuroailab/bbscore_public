@@ -8,6 +8,27 @@ from metrics import METRICS, validate_metric_benchmark, get_compatible_metrics
 from models import MODEL_REGISTRY
 
 
+def _normalize_rl_subject(subject_id: str) -> str:
+    """Accept sub-Exp1s01 or Exp1s01 → Exp1s01-style label used in benchmark names."""
+    s = subject_id.strip()
+    if s.startswith("sub-"):
+        s = s[4:]
+    return s
+
+
+def _routelearning_benchmark_id(source: str, target: str, region: str) -> str:
+    suffix_map = {
+        "hippocampus": "Hippo",
+        "left_hippocampus": "LeftHippo",
+        "right_hippocampus": "RightHippo",
+    }
+    src = _normalize_rl_subject(source)
+    tgt = _normalize_rl_subject(target)
+    suf = suffix_map[region]
+    return f"RouteLearning{src}to{tgt}{suf}"
+
+
+
 def test_pipeline(
     model_identifier: str,
     layer_name: Union[str, List[str]],
@@ -204,6 +225,37 @@ if __name__ == "__main__":
         choices=["none", "concatenate", "stack"],
         help="How to combine layers: 'none' (separate), 'concatenate' (feature concat), 'stack' (new dim).",
     )
+    parser.add_argument(
+        "--routelearning-source",
+        "--rl-source",
+        dest="rl_source",
+        type=str,
+        default=None,
+        metavar="SUBJECT",
+        help=(
+            "Route Learning only: source subject (e.g. sub-Exp1s01 or Exp1s01). "
+            "Use together with --routelearning-target; sets the benchmark automatically "
+            "(still pass --model None --layer dummy)."
+        ),
+    )
+    parser.add_argument(
+        "--routelearning-target",
+        "--rl-target",
+        dest="rl_target",
+        type=str,
+        default=None,
+        metavar="SUBJECT",
+        help="Route Learning only: target subject (e.g. sub-Exp1s02).",
+    )
+    parser.add_argument(
+        "--routelearning-region",
+        "--rl-region",
+        dest="rl_region",
+        type=str,
+        default="hippocampus",
+        choices=["hippocampus", "left_hippocampus", "right_hippocampus"],
+        help="Route Learning only: ROI when using --routelearning-source/--routelearning-target.",
+    )
 
     args = parser.parse_args()
 
@@ -213,11 +265,27 @@ if __name__ == "__main__":
         if " " in layers[0]:
             layers = layers[0].split()
 
+    benchmark_identifier = args.benchmark
+    if args.rl_source is not None or args.rl_target is not None:
+        if not args.rl_source or not args.rl_target:
+            parser.error(
+                "Both --routelearning-source and --routelearning-target are required together."
+            )
+        benchmark_identifier = _routelearning_benchmark_id(
+            args.rl_source, args.rl_target, args.rl_region
+        )
+        if benchmark_identifier not in BENCHMARK_REGISTRY:
+            parser.error(
+                f"Benchmark '{benchmark_identifier}' is not in the registry. "
+                "Check subject IDs (Exp1 / Exp2) and region; subjects must differ."
+            )
+        print(f"Using Route Learning benchmark: {benchmark_identifier}")
+
     # --- Execute the Pipeline ---
     test_pipeline(
         model_identifier=args.model,
         layer_name=layers,
-        benchmark_identifier=args.benchmark,
+        benchmark_identifier=benchmark_identifier,
         metric_names=args.metric,
         batch_size=args.batch_size,
         debug=args.debug,

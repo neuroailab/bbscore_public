@@ -28,3 +28,11 @@ NSDStimulusSet/
 
 # Local files
 generate_presentation.py
+
+route-learning/*
+
+# Results directory
+results/
+
+# Plot outputs (regenerate with scripts)
+*.png
