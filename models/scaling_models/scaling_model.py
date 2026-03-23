@@ -237,6 +237,52 @@ class DeitSmallImagenet10Seed0Loader(BaseModelLoader):
 class DeitSmallImagenet100Seed0Loader(BaseModelLoader):
     MODEL_ID = "deit_small_imagenet_100_seed-0"
     def __init__(self): super().__init__()
+    
+class DeitSmallDistilledLoader(BaseModelLoader):
+    MODEL_ID = "deit_small_distilled_patch16_224"
+
+    def __init__(self): super().__init__()
+
+    def get_model(self, identifier=None):
+        model = timm.create_model(
+            self.config['timm_model_name'], pretrained=False,
+            num_classes=self.config['num_classes']
+        )
+        state_dict = torch.hub.load_state_dict_from_url(
+            self.config['checkpoint_url'],
+            file_name=f"{self.config['model_id']}.pt",
+            map_location='cpu'
+        )
+        state_dict = state_dict['model']  # Facebook checkpoint format
+        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict, strict=True)
+        model.eval()
+        self.model = model
+        print(f"Model '{self.config['model_id']}' loaded successfully.")
+        return self.model
+    
+class DeitBaseDistilledLoader(BaseModelLoader):
+    MODEL_ID = "deit_base_distilled_patch16_224"
+
+    def __init__(self): super().__init__()
+
+    def get_model(self, identifier=None):
+        model = timm.create_model(
+            self.config['timm_model_name'], pretrained=False,
+            num_classes=self.config['num_classes']
+        )
+        state_dict = torch.hub.load_state_dict_from_url(
+            self.config['checkpoint_url'],
+            file_name=f"{self.config['model_id']}.pt",
+            map_location='cpu'
+        )
+        state_dict = state_dict['model']
+        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict, strict=True)
+        model.eval()
+        self.model = model
+        print(f"Model '{self.config['model_id']}' loaded successfully.")
+        return self.model
 
 # --- ConvNeXt Models ---
 
