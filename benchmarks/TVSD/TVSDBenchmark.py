@@ -11,9 +11,6 @@ from data.TVSD import (
     TVSDAssemblyV110msBins,
     TVSDAssemblyV410msBins,
     TVSDAssemblyIT10msBins,
-    TVSDAssemblyV125msBins,
-    TVSDAssemblyV425msBins,
-    TVSDAssemblyIT25msBins,
     TVSDAssemblyV1OneVsAll,
     TVSDAssemblyV4OneVsAll,
     TVSDAssemblyITOneVsAll,
@@ -61,7 +58,7 @@ class TVSDFull(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -79,7 +76,7 @@ class OnlineTVSDFull(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDFullStimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -116,7 +113,7 @@ class OnlineTVSDV1(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDV1StimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -153,7 +150,7 @@ class OnlineTVSDV4(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDV4StimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -190,7 +187,7 @@ class OnlineTVSDIT(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDITStimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -209,7 +206,7 @@ class TVSDFull10msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -228,7 +225,7 @@ class TVSDV110msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -247,7 +244,7 @@ class TVSDV410msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -266,7 +263,7 @@ class TVSDIT10msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -284,7 +281,7 @@ class TVSDV125msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -302,7 +299,7 @@ class TVSDV425msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 
@@ -320,7 +317,7 @@ class TVSDIT25msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=16,
+            num_workers=8,
             debug=debug
         )
 

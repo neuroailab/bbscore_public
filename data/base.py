@@ -459,7 +459,7 @@ class BaseDataset(ABC):
         bucket_name, blob_name = parts
 
         # Initialize the GCS client (assumes credentials are set up via GOOGLE_APPLICATION_CREDENTIALS)
-        client = storage.Client()
+        client = storage.Client.create_anonymous_client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         blob.download_to_filename(filepath)
