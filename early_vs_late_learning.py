@@ -43,10 +43,12 @@ from nilearn import datasets as ni_datasets
 
 BIDS_DIR = os.environ.get(
     "ROUTE_LEARNING_DATA",
-    os.path.join(os.getcwd(), "route-learning"),
+    "/home/out",
 )
 
 TASK = "routelearning"
+# fMRIPrep MNI outputs (must match filenames under <subject>/func/)
+MNI_SPACE = "MNI152NLin2009cAsym"
 
 REGION_CONFIGS = {
     "hippocampus": ["Left Hippocampus", "Right Hippocampus"],
@@ -86,14 +88,25 @@ def get_hippocampal_mask(region, reference_img):
     return nib.Nifti1Image(mask_binary, mask_resampled.affine)
 
 
-def find_bold_files(subject):
-    """Find all BOLD files for a subject, sorted by run."""
-    func_dir = os.path.join(BIDS_DIR, subject, "func")
-    pattern = os.path.join(func_dir, f"{subject}_task-{TASK}_run-*_bold.nii.gz")
-    files = sorted(glob.glob(pattern))
-    if not files:
-        raise FileNotFoundError(f"No BOLD files found in {func_dir}")
-    return files
+def find_bold_files(subject, bids_dir=None):
+    """Find all BOLD files for a subject, sorted by run (raw BIDS or fMRIPrep preproc)."""
+    root = bids_dir if bids_dir is not None else BIDS_DIR
+    func_dir = os.path.join(root, subject, "func")
+    pattern_raw = os.path.join(func_dir, f"{subject}_task-{TASK}_run-*_bold.nii.gz")
+    files = sorted(glob.glob(pattern_raw))
+    if files:
+        return files
+    pattern_fp = os.path.join(
+        func_dir,
+        f"{subject}_task-{TASK}_run-*_space-{MNI_SPACE}_desc-preproc_bold.nii.gz",
+    )
+    files = sorted(glob.glob(pattern_fp))
+    if files:
+        return files
+    raise FileNotFoundError(
+        f"No BOLD files for {subject} task-{TASK} in {func_dir} "
+        f"(tried raw *_bold.nii.gz and fMRIPrep *_desc-preproc_bold.nii.gz)"
+    )
 
 
 def extract_run_timeseries(bold_file, mask_img):
@@ -112,14 +125,14 @@ def extract_run_timeseries(bold_file, mask_img):
     return voxel_ts
 
 
-def extract_all_runs(subject, mask_img):
+def extract_all_runs(subject, mask_img, bids_dir=None):
     """
     Extract hippocampal timeseries for each run separately.
 
     Returns:
         List of arrays, each (n_TRs_in_run, n_voxels).
     """
-    bold_files = find_bold_files(subject)
+    bold_files = find_bold_files(subject, bids_dir=bids_dir)
     print(f"  {subject}: {len(bold_files)} runs found")
 
     run_data = []
@@ -239,7 +252,7 @@ def run_ridge_leave_one_run_out(source_runs, target_runs):
 # Main experiment
 # ──────────────────────────────────────────────────────────────
 
-def run_experiment(subject_a, subject_b, region="hippocampus"):
+def run_experiment(subject_a, subject_b, region="hippocampus", bids_dir=None):
     """
     Run the early vs. late learning cross-subject comparison.
 
@@ -249,17 +262,21 @@ def run_experiment(subject_a, subject_b, region="hippocampus"):
 
     For each half, runs leave-one-run-out ridge regression in both
     directions (A→B and B→A).
+
+    Args:
+        bids_dir: BIDS dataset root (default: module BIDS_DIR / ROUTE_LEARNING_DATA).
     """
+    data_root = bids_dir if bids_dir is not None else BIDS_DIR
     print(f"\n{'='*60}")
     print(f"Early vs. Late Learning Cross-Subject Prediction")
     print(f"  Subject A: {subject_a}")
     print(f"  Subject B: {subject_b}")
     print(f"  Region: {region}")
-    print(f"  Data: {BIDS_DIR}")
+    print(f"  Data: {data_root}")
     print(f"{'='*60}\n")
 
     # Create mask from first subject's first run
-    first_bold = find_bold_files(subject_a)[0]
+    first_bold = find_bold_files(subject_a, bids_dir=data_root)[0]
     ref_img = nib.load(first_bold)
     print(f"Creating {region} mask...")
     mask_img = get_hippocampal_mask(region, ref_img)
@@ -268,8 +285,8 @@ def run_experiment(subject_a, subject_b, region="hippocampus"):
 
     # Extract per-run timeseries for both subjects
     print("Extracting per-run hippocampal timeseries...")
-    runs_a = extract_all_runs(subject_a, mask_img)
-    runs_b = extract_all_runs(subject_b, mask_img)
+    runs_a = extract_all_runs(subject_a, mask_img, bids_dir=data_root)
+    runs_b = extract_all_runs(subject_b, mask_img, bids_dir=data_root)
 
     # Ensure both subjects have 14 runs
     n_runs = min(len(runs_a), len(runs_b))
@@ -375,7 +392,8 @@ def run_experiment(subject_a, subject_b, region="hippocampus"):
         },
     }
 
-    results_dir = os.path.join(os.getcwd(), "results")
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    results_dir = os.path.join(_script_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
     results_file = os.path.join(
         results_dir,
@@ -383,6 +401,8 @@ def run_experiment(subject_a, subject_b, region="hippocampus"):
     )
     with open(results_file, "w") as f:
         json.dump(results, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
     print(f"Results saved to {results_file}")
 
     return results
@@ -415,8 +435,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    if args.data_dir:
-        BIDS_DIR = args.data_dir
-
-    run_experiment(args.subject_a, args.subject_b, args.region)
+    run_experiment(
+        args.subject_a,
+        args.subject_b,
+        args.region,
+        bids_dir=args.data_dir,
+    )

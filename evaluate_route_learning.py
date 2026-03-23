@@ -1,3 +1,11 @@
+import os
+
+# BIDS root with route-learning data (events + func/). Override with ROUTE_LEARNING_DATA.
+os.environ.setdefault("ROUTE_LEARNING_DATA", "/home/out")
+_events_root = "/home/ds000217-download"
+if os.path.isdir(_events_root):
+    os.environ.setdefault("ROUTE_LEARNING_EVENTS", _events_root)
+
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,34 +35,20 @@ def main():
                 results[i, j] = 1.0 # Perfect consistency with oneself
                 continue
             
-            benchmark_name = f"RL_Exp1Sub{src}_to_Exp1Sub{tgt}"
+            # Names registered in benchmarks/RouteLearning/RouteLearningBenchmark.py
+            benchmark_name = f"RouteLearningExp1s{src}toExp1s{tgt}Hippo"
             if benchmark_name not in BENCHMARK_REGISTRY:
                 print(f"Warning: {benchmark_name} not found in registry. Skipping.")
                 continue
-                
+
             try:
-                # Instantiate mapping benchmark
                 scorer_cls = BENCHMARK_REGISTRY[benchmark_name]
                 scorer = scorer_cls(debug=False)
-                
-                # In BBScore, regression metrics like 'pls' or 'ridge' are commonly used for 
-                # assembly-to-assembly mappings. Let's use 'pls' for cross-subject predictions.
-                scorer.add_metric('pls')
-                
-                # Run the benchmark. `run()` automatically calls get_assembly on both source and target 
-                # and computes the added metrics.
+                # RouteLearningLOROBenchmark implements leave-one-run-out ridge only.
+                scorer.add_metric("ridge")
                 out = scorer.run()
-                
-                # Extract the score from the dictionary that `run()` returns
-                # Format is typically {'metrics': {'pls': score_object}, 'ceiling': array...}
-                score = out['metrics']['pls']
-                
-                # Average the raw pearson correlation slice (if it's a BrainScore-like object or float)
-                if hasattr(score, 'raw'):
-                    raw_score = score.raw.values.mean()
-                else:
-                    raw_score = float(score)  # Fallback if metric returns a scalar
-                
+                metrics = out["metrics"]
+                raw_score = float(metrics.get("final_pearson", np.nan))
                 results[i, j] = raw_score
                 
                 print(f"[{src} -> {tgt}] Average Score: {raw_score:.4f}")
