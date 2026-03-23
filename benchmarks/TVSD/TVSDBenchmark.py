@@ -58,7 +58,7 @@ class TVSDFull(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -76,7 +76,7 @@ class OnlineTVSDFull(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDFullStimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -113,7 +113,7 @@ class OnlineTVSDV1(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDV1StimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -150,7 +150,7 @@ class OnlineTVSDV4(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDV4StimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -187,7 +187,7 @@ class OnlineTVSDIT(OnlineBenchmarkScore):
             num_classes=0,
             stimulus_test_class=TVSDITStimulusTestSet,
             dataloader_batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -206,7 +206,7 @@ class TVSDFull10msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -225,7 +225,7 @@ class TVSDV110msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -244,7 +244,7 @@ class TVSDV410msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
@@ -263,65 +263,12 @@ class TVSDIT10msBins(BenchmarkScore):
             assembly_train_kwargs={'train': True},
             assembly_test_kwargs={'train': False},
             batch_size=batch_size,
-            num_workers=8,
+            num_workers=16,
             debug=debug
         )
 
 
 BENCHMARK_REGISTRY["TVSDIT10msBins"] = TVSDIT10msBins
-
-class TVSDV125msBins(BenchmarkScore):
-    def __init__(self, model_identifier, layer_name, debug: bool = False, batch_size: int = 4):
-        super().__init__(
-            stimulus_train_class=TVSDStimulusTrainSet,
-            model_identifier=model_identifier,
-            layer_name=layer_name,
-            stimulus_test_class=TVSDStimulusTestSet,
-            assembly_class=TVSDAssemblyV125msBins,
-            assembly_train_kwargs={'train': True},
-            assembly_test_kwargs={'train': False},
-            batch_size=batch_size,
-            num_workers=8,
-            debug=debug
-        )
-
-BENCHMARK_REGISTRY["TVSDV125msBins"] = TVSDV125msBins
-
-
-class TVSDV425msBins(BenchmarkScore):
-    def __init__(self, model_identifier, layer_name, debug: bool = False, batch_size: int = 4):
-        super().__init__(
-            stimulus_train_class=TVSDStimulusTrainSet,
-            model_identifier=model_identifier,
-            layer_name=layer_name,
-            stimulus_test_class=TVSDStimulusTestSet,
-            assembly_class=TVSDAssemblyV425msBins,
-            assembly_train_kwargs={'train': True},
-            assembly_test_kwargs={'train': False},
-            batch_size=batch_size,
-            num_workers=8,
-            debug=debug
-        )
-
-BENCHMARK_REGISTRY["TVSDV425msBins"] = TVSDV425msBins
-
-
-class TVSDIT25msBins(BenchmarkScore):
-    def __init__(self, model_identifier, layer_name, debug: bool = False, batch_size: int = 4):
-        super().__init__(
-            stimulus_train_class=TVSDStimulusTrainSet,
-            model_identifier=model_identifier,
-            layer_name=layer_name,
-            stimulus_test_class=TVSDStimulusTestSet,
-            assembly_class=TVSDAssemblyIT25msBins,
-            assembly_train_kwargs={'train': True},
-            assembly_test_kwargs={'train': False},
-            batch_size=batch_size,
-            num_workers=8,
-            debug=debug
-        )
-
-BENCHMARK_REGISTRY["TVSDIT25msBins"] = TVSDIT25msBins
 
 
 # ------------------------------------------------------------------------------
