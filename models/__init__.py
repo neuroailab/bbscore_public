@@ -45,6 +45,7 @@ MODEL_MODULES = [
     "sam",
     "scaling_models",
     "selavi",
+    "siglip",
     "simvp",
     "swin",
     "tau",
